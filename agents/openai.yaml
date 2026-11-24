@@ -1,0 +1,3 @@
+interface:
+  display_name: "Kernel Visualize"
+  short_description: "画出 GPU kernel 发射、CTA 分工和块内计算"
