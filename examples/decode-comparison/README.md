@@ -1,6 +1,6 @@
 # 一轮多 LoRA Decode 的 kernel 对照
 
-从草稿提议到验收，沿九步前向追踪请求甲的第三个验证位置「喝」。页面先展开第 3 步 Q/KV 投影，点另一步的标题即可换到那一段。有改动的步骤把优化前和当前实现左右对齐，两版共用的计算只出现一次。在 GitHub 文件页选择 **Download raw file**，再用浏览器打开保存的 HTML。[打开离线示例文件](index.html)
+从草稿提议到验收，沿九步前向追踪请求甲的第三个验证位置「喝」。沿页面向下读，就能看到每一步做什么、六处改动怎样影响下一步。Q/KV 的显存写入对照、验收的逐词例子和单卡开销都可以直接读。点算子名可以查看这张卡读取的权重切片、CTA 分工和通信。在 GitHub 文件页选择 **Download raw file**，再用浏览器打开保存的 HTML。[打开离线示例文件](index.html)
 
 ## 第 3 步怎样省掉 480 KiB 写入？
 
@@ -21,4 +21,4 @@ python3 scripts/export_decode_example.py /path/to/cp4-compression-and-multi-lora
   examples/decode-comparison/index.html --preview examples/decode-comparison/qkv.png
 ```
 
-核对导出页的九步顺序、Q/KV 两侧的写入以及可展开的算子详情。在手机宽度和离线环境下检查改动涉及的交互，将有变化的示例文件同步到本仓库。
+打开导出页，直接读完九步流程，再任选一个算子核对其输入、输出和通信。在手机宽度和离线环境下检查改动涉及的交互，将有变化的示例文件同步到本仓库。

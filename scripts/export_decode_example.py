@@ -134,18 +134,41 @@ def check_section(section):
     if [el.get("id") for el in stages] != stage_ids:
         raise ValueError("expected the nine stages in forward order")
     compact = all(el.tag == "details" and "decode-stage" in el.get("class", "").split() for el in stages)
+    continuous = all(el.tag == "div" and "decode-stage" in el.get("class", "").split() for el in stages)
+    collapsed = set()
+    if continuous:
+        for panel in section.iter("details"):
+            if "open" not in panel.attrib:
+                for child in panel:
+                    if child.tag != "summary":
+                        collapsed.update(child.iter())
     if compact:
         opened = [el.get("data-phase") for el in stages if "open" in el.attrib]
         if opened != ["qkv"] or any(el.get("name") != "decode-stage" for el in stages):
             raise ValueError("expected a single open Q/KV panel in the named stage group")
     for phase, stage in zip(STAGES, stages):
+        if continuous:
+            briefs = [el for el in stage.iter() if "stage-brief" in el.get("class", "").split()]
+            if len(briefs) != 1 or briefs[0] in collapsed:
+                raise ValueError(f"missing initially visible stage summary at {phase}")
+            if phase not in SHARED:
+                for side in ("brief-before", "brief-after"):
+                    if not any(side in el.get("class", "").split() and el not in collapsed
+                               for el in briefs[0].iter()):
+                        raise ValueError(f"missing initially visible {side} summary at {phase}")
         if phase not in SHARED:
+            if continuous:
+                diagrams = [el for el in stage.iter("figure") if "stage-comparison" in el.get("class", "").split()]
+                if len(diagrams) != 1:
+                    raise ValueError(f"expected one operation diagram at {phase}")
+                if phase == "qkv" and diagrams[0] in collapsed:
+                    raise ValueError("the Q/KV memory diagram should be visible when the page opens")
             rows = [el for el in stage.iter() if "operation-row" in el.get("class", "").split()]
-            if compact and not rows:
+            if (compact or continuous) and not rows:
                 raise ValueError(f"missing aligned operations at {phase}")
             for row in rows or [stage]:
                 sides = [el.get("data-pair-side") for el in row.iter() if "data-pair-side" in el.attrib]
-                if set(sides) != {"before", "after"} or (compact and sides != ["before", "after"]):
+                if set(sides) != {"before", "after"} or ((compact or continuous) and sides != ["before", "after"]):
                     raise ValueError(f"missing before/after comparison at {phase}")
         calls = [el for el in stage.iter("details")
                  if "kernel-drill" in el.get("class", "").split()
