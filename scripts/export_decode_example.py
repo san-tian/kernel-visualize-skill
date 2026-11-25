@@ -139,6 +139,16 @@ def check_section(section):
             raise ValueError(f"expected aligned before/after columns in {figure.get('data-phase')}")
     if not section.findall(".//details/summary"):
         raise ValueError("missing expandable diagram details")
+    catalogs = [e for e in section.iter("table") if "kernel-catalog" in e.get("class", "").split()]
+    if not catalogs:
+        raise ValueError("missing per-kernel inventory")
+    for catalog in catalogs:
+        for row in catalog.findall("tbody/tr"):
+            call = row.find("td/details")
+            if (call is None or call.find("summary/code") is None
+                    or len(call.findall("dl/div/dd")) != 5
+                    or any(not "".join(field.itertext()).strip() for field in call.findall("dl/div/dd"))):
+                raise ValueError("incomplete kernel input, calculation, grid, output or traffic")
     frames = [e.get("data-slot-frame") for e in section.iterfind(".//button[@data-slot-frame]")]
     select = section.find(".//select[@id='gpu-sample-card']")
     cards = [e.get("data-gpu-card") for e in section.iterfind(".//div[@data-gpu-card]")]
