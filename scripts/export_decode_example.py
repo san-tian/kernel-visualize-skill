@@ -255,8 +255,8 @@ def preview(html_path, png_path):
                                 locale="zh-CN", offline=True)
         page.goto(html_path.resolve().as_uri())
         page.evaluate("document.fonts.ready")
-        figure = page.locator('.pair-flow[data-phase="qkv"]')
-        image = figure.screenshot(type="png", animations="disabled")
+        stage = page.locator('.overview-stage[data-phase="qkv"]')
+        image = stage.screenshot(type="png", animations="disabled")
         browser.close()
     png_path.write_bytes(image)
 
@@ -265,7 +265,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="original complete article HTML")
     parser.add_argument("output", type=Path, help="standalone comparison HTML")
-    parser.add_argument("--preview", type=Path, metavar="PNG", help="also capture the Q/KV comparison with Chromium")
+    parser.add_argument("--preview", type=Path, metavar="PNG", help="also capture the overview's Q/KV stage with Chromium")
     args = parser.parse_args()
     paths = [path.resolve() for path in (args.input, args.output, args.preview) if path]
     if len(set(paths)) != len(paths):
