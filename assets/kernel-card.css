@@ -1,0 +1,78 @@
+/* A kernel card can sit inside a diagram, comparison column, or disclosure. */
+dl.kernel-card {
+  box-sizing: border-box;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  margin: .35rem 0 .6rem;
+  padding: 0;
+  border: 1px solid #c5d8d0;
+  border-radius: .4rem;
+  background: #fff;
+  color: #263c34;
+  text-align: start;
+}
+.kernel-card > div {
+  min-width: 0;
+  margin: 0;
+  padding: .56rem .68rem;
+  border: 0;
+  border-bottom: 1px solid #dde7e2;
+}
+.kernel-card > div:last-child { border-bottom: 0; }
+.kernel-card > div > dt {
+  margin: 0 0 .22rem;
+  color: #205c49;
+  font: 650 .83rem/1.45 system-ui, sans-serif;
+}
+.kernel-card > div > dd {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font: normal .89rem/1.56 system-ui, sans-serif;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.kernel-card dd p { margin: .25rem 0 0; }
+.kernel-card .tensor-signature, .kernel-card .kernel-pseudocode > code {
+  box-sizing: border-box;
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1f4138;
+  font: normal .85rem/1.55 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+.kernel-card pre.kernel-pseudocode {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: .55rem .65rem;
+  border: 0;
+  border-inline-start: 2px solid #7da996;
+  border-radius: .18rem;
+  background: #eff5f1;
+  text-align: start;
+  white-space: pre-wrap;
+}
+.kernel-card .tensor-size {
+  display: grid;
+  gap: .14rem;
+  margin: .3rem 0 0;
+  padding: .1rem .45rem;
+  border-inline-start: 2px solid #a8c4b7;
+  color: #3c594e;
+  font-size: .84rem;
+  font-variant-numeric: tabular-nums;
+}
+.kernel-card .tensor-size > span { display: block; margin: 0; }
+.kernel-card .card-grid, .kernel-card .card-traffic { background: #f7f9f8; }
+.kernel-card .card-traffic { border-radius: 0 0 .4rem .4rem; }
+.kernel-card sub { font-size: .75em; line-height: 0; }

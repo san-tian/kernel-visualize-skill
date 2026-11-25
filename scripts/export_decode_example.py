@@ -123,6 +123,40 @@ class SectionParser(HTMLParser):
 
 STAGES = ("draft", "input", "qkv", "attention", "output", "expert", "down", "head", "accept")
 SHARED = {"draft", "attention", "accept"}
+CARD_ROLES = ("card-input", "card-program", "card-output", "card-grid", "card-traffic")
+
+
+def check_kernel_card(call, phase, has_contracts, uses_template):
+    summary = call.find("summary")
+    name = "".join(summary.itertext()).strip() if summary is not None else ""
+    where = f"{phase}: {name or '(unnamed call)'}"
+    fields = call.findall("dl/div/dd")
+    if not name or len(fields) != 5 or any(not "".join(field.itertext()).strip() for field in fields):
+        raise ValueError(f"incomplete kernel input, calculation, grid, output or traffic at {where}")
+    if uses_template:
+        bodies = call.findall("dl")
+        if len(bodies) != 1 or "kernel-card" not in bodies[0].get("class", "").split():
+            raise ValueError(f"missing shared kernel card at {where}")
+        rows = list(bodies[0])
+        if (len(rows) != len(CARD_ROLES)
+                or any(row.tag != "div" or [child.tag for child in row] != ["dt", "dd"]
+                       or set(row.get("class", "").split()).intersection(CARD_ROLES) != {role}
+                       for row, role in zip(rows, CARD_ROLES))):
+            raise ValueError(f"missing or out-of-order kernel card field at {where}")
+        for field in (fields[0], fields[2]):
+            extent = field.find("div[@class='tensor-size']")
+            if extent is None or not "".join(extent.itertext()).strip():
+                raise ValueError(f"missing Decode input or output size at {where}")
+    if has_contracts or uses_template:
+        labels = [(el.text or "").strip() for el in call.findall("dl/div/dt")]
+        signatures = [fields[i].find("code[@class='tensor-signature']") for i in (0, 2)]
+        program = fields[1].find("pre[@class='kernel-pseudocode']/code")
+        if (len(labels) != 5 or not labels[0].startswith("Input") or not labels[1].startswith("伪代码")
+                or not labels[2].startswith("Output") or not labels[3].startswith("CTA")
+                or "通信" not in labels[4]
+                or not all(el is not None and (el.text or "").strip() for el in signatures)
+                or program is None or sum(bool(line.strip()) for line in (program.text or "").splitlines()) < 2):
+            raise ValueError(f"missing Input, pseudocode, Output, CTA or communication at {where}")
 
 
 def check_section(section):
@@ -135,7 +169,8 @@ def check_section(section):
         raise ValueError("expected the nine stages in forward order")
     compact = all(el.tag == "details" and "decode-stage" in el.get("class", "").split() for el in stages)
     continuous = all(el.tag == "div" and "decode-stage" in el.get("class", "").split() for el in stages)
-    has_contracts = any("kernel-contracts" in el.get("class", "").split() for el in section.iter())
+    classes = {name for el in section.iter() for name in el.get("class", "").split()}
+    uses_template = bool({"kernel-card-template", "kernel-card"} & classes)
     collapsed = set()
     if continuous:
         for panel in section.iter("details"):
@@ -177,22 +212,7 @@ def check_section(section):
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         for call in calls:
-            fields = call.findall("dl/div/dd")
-            if (call.find("summary") is None or len(fields) != 5
-                    or any(not "".join(field.itertext()).strip() for field in fields)):
-                raise ValueError(f"incomplete kernel input, calculation, grid, output or traffic at {phase}")
-            if has_contracts:
-                labels = [el.text or "" for el in call.findall("dl/div/dt")]
-                signature_in = fields[0].find("code[@class='tensor-signature']")
-                signature_out = fields[2].find("code[@class='tensor-signature']")
-                program = fields[1].find("pre[@class='kernel-pseudocode']/code")
-                if (len(labels) != 5 or not labels[0].startswith("Input") or labels[1] != "伪代码"
-                        or not labels[2].startswith("Output") or not labels[3].startswith("CTA")
-                        or "通信" not in labels[4]
-                        or not all(el is not None and (el.text or "").strip() for el in (signature_in, signature_out))
-                        or program is None or len((program.text or "").strip().splitlines()) < 2):
-                    name = "".join(call.find("summary").itertext())
-                    raise ValueError(f"missing Input, pseudocode, Output, CTA or communication at {phase}: {name}")
+            check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template)
     return ids
 
 
@@ -256,6 +276,8 @@ def comparison_styles(styles, section, ids):
     css = filter_rules(re.sub(r"/\*.*?\*/", "", "\n".join(styles), flags=re.S))
     if not all(s in css for s in (":root", ".page", ".kernel-drill")):
         raise ValueError("missing theme or comparison styles")
+    if "kernel-card" in classes and not re.search(r"\.kernel-card(?![\w-])", css):
+        raise ValueError("missing shared kernel card styles")
     if re.search(r"@import|url\s*\(|</style", css, re.I):
         raise ValueError("review external or unsupported CSS resource before export")
     return "\n".join(line.rstrip() for line in css.splitlines())
