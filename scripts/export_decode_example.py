@@ -126,7 +126,27 @@ SHARED = {"draft", "attention", "accept"}
 CARD_ROLES = ("card-input", "card-program", "card-output", "card-grid", "card-traffic")
 
 
-def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows):
+# Stable IDs in the public HTML format. Validate older articles against their own format markers.
+CALL_KINDS = {"kind-" + name for name in (
+    "kernel", "torch", "library", "view", "copy", "composite", "collective", "example",
+)}
+
+
+def check_call_kind(call, summary, grid, where):
+    badges = [el for el in summary.iter("span") if "entry-kind" in el.get("class", "").split()]
+    if len(badges) != 1 or not "".join(badges[0].itertext()).strip():
+        raise ValueError(f"missing or ambiguous call type in summary at {where}")
+    badge_kinds = {c for c in badges[0].get("class", "").split() if c.startswith("kind-")}
+    body_kinds = {c for c in call.find("dl").get("class", "").split() if c.startswith("kind-")}
+    if len(badge_kinds) != 1 or not badge_kinds <= CALL_KINDS or badge_kinds != body_kinds:
+        raise ValueError(f"unknown or inconsistent call type at {where}")
+    boundaries = [el for el in grid.findall("span") if "dispatch-boundary" in el.get("class", "").split()]
+    if (len(boundaries) != 1 or boundaries[0] is not grid[0]
+            or (grid.text or "").strip() or not "".join(boundaries[0].itertext()).strip()):
+        raise ValueError(f"expected dispatch boundary first in CTA field at {where}")
+
+
+def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows, has_call_kinds):
     summary = call.find("summary")
     name = "".join(summary.itertext()).strip() if summary is not None else ""
     where = f"{phase}: {name or '(unnamed call)'}"
@@ -147,6 +167,8 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows)
             extent = field.find(".//div[@class='tensor-size']")
             if extent is None or not "".join(extent.itertext()).strip():
                 raise ValueError(f"missing Decode input or output size at {where}")
+    if has_call_kinds:
+        check_call_kind(call, summary, fields[3], where)
     if has_input_rows:
         rows = fields[0].findall("table[@class='input-variables']/tbody/tr")
         for row in rows:
@@ -179,7 +201,8 @@ def check_section(section):
     compact = all(el.tag == "details" and "decode-stage" in el.get("class", "").split() for el in stages)
     continuous = all(el.tag == "div" and "decode-stage" in el.get("class", "").split() for el in stages)
     classes = {name for el in section.iter() for name in el.get("class", "").split()}
-    uses_template = bool({"kernel-card-template", "kernel-card"} & classes)
+    has_call_kinds = "kernel-call-kinds" in classes
+    uses_template = has_call_kinds or bool({"kernel-card-template", "kernel-card"} & classes)
     collapsed = set()
     if continuous:
         for panel in section.iter("details"):
@@ -217,11 +240,12 @@ def check_section(section):
                     raise ValueError(f"missing before/after comparison at {phase}")
         calls = [el for el in stage.iter("details")
                  if "kernel-drill" in el.get("class", "").split()
-                 and "kernel-chain" not in el.get("class", "").split()]
+                 and (el.find("dl") is not None or not {"kernel-chain", "call-group"} & set(el.get("class", "").split()))]
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         for call in calls:
-            check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template, "kernel-input-examples" in classes)
+            check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template,
+                              "kernel-input-examples" in classes, has_call_kinds)
     return ids
 
 

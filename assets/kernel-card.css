@@ -103,3 +103,19 @@ dl.kernel-card {
   margin: 0; padding: .15rem 0; cursor: pointer; color: #36594b;
   font-size: .82rem; line-height: 1.45; text-align: start;
 }
+
+.entry-kind {
+  display: inline-block;
+  max-width: 100%;
+  margin-inline-end: .4rem;
+  padding: .04rem .34rem;
+  border-radius: .22rem;
+  background: #eef0ee;
+  color: #46564e;
+  font: 650 .73rem/1.5 system-ui, sans-serif;
+  vertical-align: baseline;
+}
+.entry-kind.kind-kernel { background: #dcefe7; color: #18543d; }
+.entry-kind.kind-torch, .entry-kind.kind-library { background: #e8eef8; color: #334e74; }
+.entry-kind.kind-copy, .entry-kind.kind-collective { background: #f5ecdd; color: #664a29; }
+.kernel-card .dispatch-boundary { display: block; margin-bottom: .22rem; font-weight: 600; }

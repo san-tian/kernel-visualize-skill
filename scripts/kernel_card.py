@@ -1,4 +1,4 @@
-"""Render a kernel's Input, pseudocode, Output, CTA and communication as HTML.
+"""Render a call's Input, pseudocode, Output, CTA and communication as HTML.
 
 Input rows contain plain-text (variable and meaning, example value, reason) triples. The caller supplies the kernel name and decides
 whether to display the body immediately or place it inside a details element.
@@ -6,7 +6,26 @@ Pair the returned fragment with assets/kernel-card.css.
 """
 from html import escape
 import re
-from typing import Sequence, Tuple, Union
+from typing import Optional, Sequence, Tuple, Union
+
+
+KIND_LABELS = {
+    "kernel": "显式 GPU kernel",
+    "torch": "PyTorch 算子",
+    "library": "后端库调用",
+    "view": "张量视图",
+    "copy": "数据复制",
+    "composite": "组合流程",
+    "collective": "集合通信",
+    "example": "教学示意",
+}
+
+
+def kind_badge(kind_id: str) -> str:
+    """Return a visible label for the level of execution represented by an entry."""
+    if kind_id not in KIND_LABELS:
+        raise ValueError(f"Unknown call kind: {kind_id!r}")
+    return f'<span class="entry-kind kind-{kind_id}">{KIND_LABELS[kind_id]}</span>'
 
 
 _SUBSCRIPT_DIGITS = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
@@ -73,6 +92,7 @@ def render_card_body(
     grid: str,
     traffic: str,
     *,
+    kind: Optional[Tuple[str, str]] = None,
     input_note: str = "",
     output_note: str = "",
     input_size: str = "",
@@ -83,6 +103,10 @@ def render_card_body(
     Pass one row per variable or a group of related indices. Give a traceable
     slice or range for data whose numeric contents are unknown. Existing
     callers can also pass a signature string with an input_note.
+
+    Pass kind=(kind_id, dispatch_boundary) to distinguish a framework operator,
+    a concrete launch, or another execution level. Use kind_badge(kind_id)
+    in the caller's heading to show the type before the reader opens the card.
 
     grid describes the unit of work or known dispatch boundary. traffic describes
     memory access, host copies and collectives as applicable. Size lines can state
@@ -102,16 +126,25 @@ def render_card_body(
     else:
         input_html = _input_rows(inputs, input_size)
 
+    grid_html = physical_text(grid.strip())
+    kind_class = ""
+    if kind is not None:
+        kind_id, boundary = kind
+        if kind_id not in KIND_LABELS or not boundary.strip():
+            raise ValueError(f"Kernel card needs a known kind and its dispatch boundary: {kind_id!r}")
+        kind_class = f" kind-{kind_id}"
+        grid_html = f'<span class="dispatch-boundary">{physical_text(boundary.strip())}</span>' + grid_html
+
     code = escape(program.strip("\r\n"))
     fields = (
         ("input", "Input · 读哪些张量", input_html),
         ("program", "伪代码", f'<pre class="kernel-pseudocode"><code>{code}</code></pre>'),
         ("output", "Output · 写到哪里", _tensor(outputs, output_note, output_size)),
-        ("grid", "CTA · 线程块分工", physical_text(grid.strip())),
+        ("grid", "CTA · 发射与线程块分工", grid_html),
         ("traffic", "显存与跨卡通信", physical_text(traffic.strip())),
     )
     body = "".join(
         f'<div class="card-{key}"><dt>{label}</dt><dd>{value}</dd></div>'
         for key, label, value in fields
     )
-    return f'<dl class="kernel-card kernel-operands">{body}</dl>'
+    return f'<dl class="kernel-card kernel-operands{kind_class}">{body}</dl>'
