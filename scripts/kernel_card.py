@@ -93,6 +93,7 @@ def render_card_body(
     traffic: str,
     *,
     kind: Optional[Tuple[str, str]] = None,
+    backend: Optional[Tuple[str, str]] = None,
     input_note: str = "",
     output_note: str = "",
     input_size: str = "",
@@ -107,6 +108,9 @@ def render_card_body(
     Pass kind=(kind_id, dispatch_boundary) to distinguish a framework operator,
     a concrete launch, or another execution level. Use kind_badge(kind_id)
     in the caller's heading to show the type before the reader opens the card.
+
+    backend=(name, implementation) places the verified execution path above
+    the pseudocode. When only the framework entry is known, say so here.
 
     grid describes the unit of work or known dispatch boundary. traffic describes
     memory access, host copies and collectives as applicable. Size lines can state
@@ -136,9 +140,20 @@ def render_card_body(
         grid_html = f'<span class="dispatch-boundary">{physical_text(boundary.strip())}</span>' + grid_html
 
     code = escape(program.strip("\r\n"))
+    program_html = f'<pre class="kernel-pseudocode"><code>{code}</code></pre>'
+    if backend is not None:
+        backend_name, implementation = backend
+        if not backend_name.strip() or not implementation.strip():
+            raise ValueError("A backend needs both its name and its implementation path")
+        program_html = (
+            '<div class="call-backend">'
+            f'<span class="backend-name">后端 · {physical_text(backend_name.strip())}</span> '
+            f'<span class="backend-implementation">{physical_text(implementation.strip())}</span></div>'
+            + program_html
+        )
     fields = (
         ("input", "Input · 读哪些张量", input_html),
-        ("program", "伪代码", f'<pre class="kernel-pseudocode"><code>{code}</code></pre>'),
+        ("program", "伪代码", program_html),
         ("output", "Output · 写到哪里", _tensor(outputs, output_note, output_size)),
         ("grid", "CTA · 发射与线程块分工", grid_html),
         ("traffic", "显存与跨卡通信", physical_text(traffic.strip())),

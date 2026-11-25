@@ -146,7 +146,32 @@ def check_call_kind(call, summary, grid, where):
         raise ValueError(f"expected dispatch boundary first in CTA field at {where}")
 
 
-def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows, has_call_kinds):
+def with_class(nodes, name):
+    return [el for el in nodes if name in el.get("class", "").split()]
+
+
+def check_backend_fields(element, where):
+    for role in ("backend-name", "backend-implementation"):
+        matches = with_class(element, role)
+        if len(matches) != 1 or not "".join(matches[0].itertext()).strip():
+            raise ValueError(f"missing or ambiguous {role} at {where}")
+
+
+def check_stage_backends(stage, phase, collapsed):
+    briefs = with_class(stage.iter(), "stage-brief")
+    if len(briefs) != 1:
+        raise ValueError(f"expected one stage summary for backend descriptions at {phase}")
+    sides = ("brief-common",) if phase in SHARED else ("brief-before", "brief-after")
+    for side in sides:
+        columns = with_class(briefs[0].iter(), side)
+        entries = [entry for column in columns for entry in with_class(column.iter(), "stage-backends")]
+        if len(entries) != 1 or entries[0] in collapsed:
+            raise ValueError(f"expected one visible backend description at {phase}/{side}")
+        check_backend_fields(entries[0], f"{phase}/{side}")
+
+
+def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows, has_call_kinds,
+                      has_backends):
     summary = call.find("summary")
     name = "".join(summary.itertext()).strip() if summary is not None else ""
     where = f"{phase}: {name or '(unnamed call)'}"
@@ -167,6 +192,14 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows,
             extent = field.find(".//div[@class='tensor-size']")
             if extent is None or not "".join(extent.itertext()).strip():
                 raise ValueError(f"missing Decode input or output size at {where}")
+    if has_backends:
+        entries = with_class(fields[1], "call-backend")
+        children = list(fields[1])
+        program = fields[1].find("pre[@class='kernel-pseudocode']")
+        if (len(entries) != 1 or program is None
+                or children.index(entries[0]) + 1 != children.index(program)):
+            raise ValueError(f"expected backend immediately before pseudocode at {where}")
+        check_backend_fields(entries[0], where)
     if has_call_kinds:
         check_call_kind(call, summary, fields[3], where)
     if has_input_rows:
@@ -202,7 +235,8 @@ def check_section(section):
     continuous = all(el.tag == "div" and "decode-stage" in el.get("class", "").split() for el in stages)
     classes = {name for el in section.iter() for name in el.get("class", "").split()}
     has_call_kinds = "kernel-call-kinds" in classes
-    uses_template = has_call_kinds or bool({"kernel-card-template", "kernel-card"} & classes)
+    has_backends = "kernel-backends" in classes
+    uses_template = has_backends or has_call_kinds or bool({"kernel-card-template", "kernel-card"} & classes)
     collapsed = set()
     if continuous:
         for panel in section.iter("details"):
@@ -215,6 +249,8 @@ def check_section(section):
         if opened != ["qkv"] or any(el.get("name") != "decode-stage" for el in stages):
             raise ValueError("expected a single open Q/KV panel in the named stage group")
     for phase, stage in zip(STAGES, stages):
+        if has_backends:
+            check_stage_backends(stage, phase, collapsed)
         if continuous:
             briefs = [el for el in stage.iter() if "stage-brief" in el.get("class", "").split()]
             if len(briefs) != 1 or briefs[0] in collapsed:
@@ -245,7 +281,7 @@ def check_section(section):
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         for call in calls:
             check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template,
-                              "kernel-input-examples" in classes, has_call_kinds)
+                              "kernel-input-examples" in classes, has_call_kinds, has_backends)
     return ids
 
 

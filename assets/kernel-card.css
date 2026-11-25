@@ -119,3 +119,6 @@ dl.kernel-card {
 .entry-kind.kind-torch, .entry-kind.kind-library { background: #e8eef8; color: #334e74; }
 .entry-kind.kind-copy, .entry-kind.kind-collective { background: #f5ecdd; color: #664a29; }
 .kernel-card .dispatch-boundary { display: block; margin-bottom: .22rem; font-weight: 600; }
+
+.kernel-card .call-backend { margin: .12rem 0 .42rem; font-size: .86rem; line-height: 1.5; }
+.kernel-card .call-backend .backend-name { display: block; font-weight: 650; color: #254d3d; }
