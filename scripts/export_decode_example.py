@@ -14,7 +14,7 @@ from xml.etree import ElementTree as ET
 CONTROL_SCRIPT_SHA256 = "6882dad65ff0f4f7e0e338144792f50d94dbc26dc5d28d999941572d0a4ce758"
 TAGS = set("""
     a aside b br button caption code dd details div dl dt figcaption figure
-    h2 h3 h4 h5 i label li mark ol option p section select small span strong sub
+    h2 h3 h4 h5 i label li mark ol option p pre section select small span strong sub
     summary sup table tbody td th thead tr
 """.split())
 ATTRS = set("""
@@ -135,6 +135,7 @@ def check_section(section):
         raise ValueError("expected the nine stages in forward order")
     compact = all(el.tag == "details" and "decode-stage" in el.get("class", "").split() for el in stages)
     continuous = all(el.tag == "div" and "decode-stage" in el.get("class", "").split() for el in stages)
+    has_contracts = any("kernel-contracts" in el.get("class", "").split() for el in section.iter())
     collapsed = set()
     if continuous:
         for panel in section.iter("details"):
@@ -180,6 +181,18 @@ def check_section(section):
             if (call.find("summary") is None or len(fields) != 5
                     or any(not "".join(field.itertext()).strip() for field in fields)):
                 raise ValueError(f"incomplete kernel input, calculation, grid, output or traffic at {phase}")
+            if has_contracts:
+                labels = [el.text or "" for el in call.findall("dl/div/dt")]
+                signature_in = fields[0].find("code[@class='tensor-signature']")
+                signature_out = fields[2].find("code[@class='tensor-signature']")
+                program = fields[1].find("pre[@class='kernel-pseudocode']/code")
+                if (len(labels) != 5 or not labels[0].startswith("Input") or labels[1] != "伪代码"
+                        or not labels[2].startswith("Output") or not labels[3].startswith("CTA")
+                        or "通信" not in labels[4]
+                        or not all(el is not None and (el.text or "").strip() for el in (signature_in, signature_out))
+                        or program is None or len((program.text or "").strip().splitlines()) < 2):
+                    name = "".join(call.find("summary").itertext())
+                    raise ValueError(f"missing Input, pseudocode, Output, CTA or communication at {phase}: {name}")
     return ids
 
 
