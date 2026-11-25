@@ -76,3 +76,30 @@ dl.kernel-card {
 .kernel-card .card-grid, .kernel-card .card-traffic { background: #f7f9f8; }
 .kernel-card .card-traffic { border-radius: 0 0 .4rem .4rem; }
 .kernel-card sub { font-size: .75em; line-height: 0; }
+
+/* A variable, its example and its origin stay together in narrow comparison columns. */
+.kernel-card table.input-variables {
+  display: table; width: 100%; table-layout: fixed; border-collapse: collapse;
+  margin: .12rem 0 .2rem; color: inherit; background: transparent; border: 0;
+}
+.kernel-card .input-variables thead { display: table-header-group; }
+.kernel-card .input-variables tbody { display: table-row-group; }
+.kernel-card .input-variables tr { display: table-row; background: transparent; }
+.kernel-card .input-variables th, .kernel-card .input-variables td {
+  display: table-cell; width: auto; padding: .3rem .24rem; border: 0;
+  border-bottom: 1px solid #e0e8e3; background: transparent;
+  color: inherit; font: inherit; text-align: start; vertical-align: top;
+  white-space: normal; overflow-wrap: anywhere;
+}
+.kernel-card .input-variables th:first-child { width: 33%; }
+.kernel-card .input-variables thead th { color: #50665b; font-size: .76rem; font-weight: 650; }
+.kernel-card .input-variables tbody th { font-size: .85rem; }
+.kernel-card .input-variables tbody th code { display: block; padding: 0; border: 0; border-radius: 0; background: none; color: #1f4138; font-weight: 650; white-space: normal; }
+.kernel-card .input-variables .variable-example { display: block; color: #203e32; }
+.kernel-card .input-variables .variable-reason { display: block; color: #4a5e53; font-size: .83rem; }
+.kernel-card .input-variables td::before { content: none; }
+.kernel-card .input-extent { margin: .24rem 0 0; border: 0; padding: 0; background: transparent; }
+.kernel-card .input-extent > summary {
+  margin: 0; padding: .15rem 0; cursor: pointer; color: #36594b;
+  font-size: .82rem; line-height: 1.45; text-align: start;
+}

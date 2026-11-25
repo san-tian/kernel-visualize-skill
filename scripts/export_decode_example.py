@@ -126,7 +126,7 @@ SHARED = {"draft", "attention", "accept"}
 CARD_ROLES = ("card-input", "card-program", "card-output", "card-grid", "card-traffic")
 
 
-def check_kernel_card(call, phase, has_contracts, uses_template):
+def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows):
     summary = call.find("summary")
     name = "".join(summary.itertext()).strip() if summary is not None else ""
     where = f"{phase}: {name or '(unnamed call)'}"
@@ -144,12 +144,21 @@ def check_kernel_card(call, phase, has_contracts, uses_template):
                        for row, role in zip(rows, CARD_ROLES))):
             raise ValueError(f"missing or out-of-order kernel card field at {where}")
         for field in (fields[0], fields[2]):
-            extent = field.find("div[@class='tensor-size']")
+            extent = field.find(".//div[@class='tensor-size']")
             if extent is None or not "".join(extent.itertext()).strip():
                 raise ValueError(f"missing Decode input or output size at {where}")
+    if has_input_rows:
+        rows = fields[0].findall("table[@class='input-variables']/tbody/tr")
+        for row in rows:
+            parts = (row.find("th[@scope='row']"), row.find("td/span[@class='variable-example']"),
+                     row.find("td/span[@class='variable-reason']"))
+            if any(part is None or not "".join(part.itertext()).strip() for part in parts):
+                raise ValueError(f"missing variable, example or reason at {where}")
+        if not rows or fields[0].find("code") is not None or fields[0].find("p") is not None:
+            raise ValueError(f"expected a variable table as the Input at {where}")
     if has_contracts or uses_template:
         labels = [(el.text or "").strip() for el in call.findall("dl/div/dt")]
-        signatures = [fields[i].find("code[@class='tensor-signature']") for i in (0, 2)]
+        signatures = [fields[i].find("code[@class='tensor-signature']") for i in ((2,) if has_input_rows else (0, 2))]
         program = fields[1].find("pre[@class='kernel-pseudocode']/code")
         if (len(labels) != 5 or not labels[0].startswith("Input") or not labels[1].startswith("伪代码")
                 or not labels[2].startswith("Output") or not labels[3].startswith("CTA")
@@ -212,7 +221,7 @@ def check_section(section):
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         for call in calls:
-            check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template)
+            check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template, "kernel-input-examples" in classes)
     return ids
 
 
