@@ -14,6 +14,8 @@ description: 讲解 CUDA、Triton 等 GPU kernel 的发射与计算流程。适�
 ├── SKILL.md                      # 分析、画图和验收
 ├── README.md -> SKILL.md
 ├── agents/openai.yaml
+├── examples/decode-comparison/   # 一轮 Decode 的前后对照，含可离线打开的图
+├── scripts/export_decode_example.py  # 从教学页更新这个案例及其预览
 └── references/
     └── tiled-projection.md       # 可手算的一维与二维分工案例
 ```
@@ -27,6 +29,8 @@ description: 讲解 CUDA、Triton 等 GPU kernel 的发射与计算流程。适�
 5. **建立因果。** 前后对照沿用同一输入和输出坐标。指明原来的工作由谁重复做或重复读，改后移到哪个阶段，哪些数学操作仍按元素执行。分别报告算术量、逻辑加载量、显存实测流量、launch 数和吞吐或耗时。多发出的 CTA 表示调度任务增多，实际 SM 覆盖和 warp 驻留需要独立验证。
 
 当需要解释按行和按列的任务切分、同权重复用或尾部回退时，读取[小矩阵案例](references/tiled-projection.md)。在教学页面把术语放在第一次需要它的位置。用于 PR 时，可只选体现改动因果的图和伪代码切片。
+
+讲一整轮前向里哪些 kernel 发生了变化时，可参考多 LoRA Decode 案例。它先给出九步总图，再把同一计算动作的旧、当前实现放在同一行。多个动作融合进一次 launch 时，后续动作标明属于哪次发射。两版共用的上下游横跨两栏。[Decode 前后对照案例](examples/decode-comparison/README.md)
 
 ## 数字的来源和生效范围
 
@@ -49,5 +53,7 @@ description: 讲解 CUDA、Triton 等 GPU kernel 的发射与计算流程。适�
 - [ ] 目标读者能在最终交付里看到图、伪代码和依据。
 
 ## Git 同步与发布
+
+维护原第 7、8 页合并的 Decode 对照页时，同一次更新也要从定稿页面重新导出本案例和预览，并在 GitHub 同步有变化的文件。导出入口和核对方法见[案例维护说明](examples/decode-comparison/README.md#同步博客更新)。
 
 仓库为 [san-tian/kernel-visualize-skill](https://github.com/san-tian/kernel-visualize-skill)。首次发布初始化 `main`。后续变更方式待用户选择，通用约定见 [skill4skill](https://github.com/san-tian/skill4skill/blob/main/SKILL.md#git-同步与发布)。
