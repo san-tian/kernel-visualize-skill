@@ -30,7 +30,7 @@ description: 讲解 CUDA、Triton 等 GPU kernel 的发射与计算流程。适�
 
 当需要解释按行和按列的任务切分、同权重复用或尾部回退时，读取[小矩阵案例](references/tiled-projection.md)。在教学页面把术语放在第一次需要它的位置。用于 PR 时，可只选体现改动因果的图和伪代码切片。
 
-讲一整轮前向里哪些 kernel 发生了变化时，可参考多 LoRA Decode 案例。它先给出九步总图，再把同一计算动作的旧、当前实现放在同一行。多个动作融合进一次 launch 时，后续动作标明属于哪次发射。两版共用的上下游横跨两栏。[Decode 前后对照案例](examples/decode-comparison/README.md)
+一整轮前向沿一条时间线讲到底。每步先画上游给什么、当前怎样计算、结果交给谁。改动处把相同动作的旧版与当前实现横向对齐，统一的上下游只画一遍。将完整的张量切片、CTA 分工和通信放在算子名下面展开，同一次调用保留一处详情。把每卡总账和推导放在流程末尾。[Decode 前后对照案例](examples/decode-comparison/README.md)
 
 ## 数字的来源和生效范围
 

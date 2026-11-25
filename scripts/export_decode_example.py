@@ -20,9 +20,9 @@ TAGS = set("""
 ATTRS = set("""
     aria-hidden aria-label aria-labelledby aria-live aria-pressed class colspan
     data-change data-gpu-card data-kernel-role data-label data-pair-side
-    data-phase data-row data-slot-cell data-slot-controls data-slot-frame
+    data-page data-phase data-row data-slot-cell data-slot-controls data-slot-frame
     data-slot-message data-slot-route data-slot-saved-bytes data-slot-writes
-    data-step hidden id open role scope start type value
+    data-step hidden id name open role scope start type value
 """.split())
 
 
@@ -101,7 +101,6 @@ class SectionParser(HTMLParser):
         values = dict(attrs)
         if not self.stack:
             values.pop("hidden", None)
-            values.pop("data-page", None)
         if tag == "a":
             values.pop("href", None)
         if set(values) - ATTRS:
@@ -122,38 +121,42 @@ class SectionParser(HTMLParser):
             self.tree.end("span" if tag == "a" else tag)
 
 
+STAGES = ("draft", "input", "qkv", "attention", "output", "expert", "down", "head", "accept")
+SHARED = {"draft", "attention", "accept"}
+
+
 def check_section(section):
-    ids = [e.get("id") for e in section.iter() if "id" in e.attrib]
-    required = {"compare-guide", "compare-sizes", "compare-budget", "slot-refresh-guide", "gpu-sample-card"}
-    if required - set(ids):
-        raise ValueError("missing comparison anchors: " + ", ".join(sorted(required - set(ids))))
+    ids = [el.get("id") for el in section.iter() if "id" in el.attrib]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate comparison anchors")
-    pairs = [el for el in section.iter("figure") if "pair-flow" in el.get("class", "").split()]
-    if not pairs:
-        raise ValueError("missing paired kernel diagrams")
-    for figure in pairs:
-        rows = figure.findall(".//tr[@class='pair-sides']")
-        if not rows or any([cell.get("data-pair-side") for cell in row.findall("td")]
-                           != ["before", "after"] for row in rows):
-            raise ValueError(f"expected aligned before/after columns in {figure.get('data-phase')}")
-    if not section.findall(".//details/summary"):
-        raise ValueError("missing expandable diagram details")
-    catalogs = [e for e in section.iter("table") if "kernel-catalog" in e.get("class", "").split()]
-    if not catalogs:
-        raise ValueError("missing per-kernel inventory")
-    for catalog in catalogs:
-        for row in catalog.findall("tbody/tr"):
-            call = row.find("td/details")
-            if (call is None or call.find("summary/code") is None
-                    or len(call.findall("dl/div/dd")) != 5
-                    or any(not "".join(field.itertext()).strip() for field in call.findall("dl/div/dd"))):
-                raise ValueError("incomplete kernel input, calculation, grid, output or traffic")
-    frames = [e.get("data-slot-frame") for e in section.iterfind(".//button[@data-slot-frame]")]
-    select = section.find(".//select[@id='gpu-sample-card']")
-    cards = [e.get("data-gpu-card") for e in section.iterfind(".//div[@data-gpu-card]")]
-    if not frames or not cards or cards != [e.get("value") for e in select]:
-        raise ValueError("missing slot controls or mismatched GPU card panels")
+    stage_ids = [f"compare-{phase}" for phase in STAGES]
+    stages = [el for el in section.iter() if el.get("id") in stage_ids]
+    if [el.get("id") for el in stages] != stage_ids:
+        raise ValueError("expected the nine stages in forward order")
+    compact = all(el.tag == "details" and "decode-stage" in el.get("class", "").split() for el in stages)
+    if compact:
+        opened = [el.get("data-phase") for el in stages if "open" in el.attrib]
+        if opened != ["qkv"] or any(el.get("name") != "decode-stage" for el in stages):
+            raise ValueError("expected a single open Q/KV panel in the named stage group")
+    for phase, stage in zip(STAGES, stages):
+        if phase not in SHARED:
+            rows = [el for el in stage.iter() if "operation-row" in el.get("class", "").split()]
+            if compact and not rows:
+                raise ValueError(f"missing aligned operations at {phase}")
+            for row in rows or [stage]:
+                sides = [el.get("data-pair-side") for el in row.iter() if "data-pair-side" in el.attrib]
+                if set(sides) != {"before", "after"} or (compact and sides != ["before", "after"]):
+                    raise ValueError(f"missing before/after comparison at {phase}")
+        calls = [el for el in stage.iter("details")
+                 if "kernel-drill" in el.get("class", "").split()
+                 and "kernel-chain" not in el.get("class", "").split()]
+        if not calls:
+            raise ValueError(f"missing expandable kernel inventory at {phase}")
+        for call in calls:
+            fields = call.findall("dl/div/dd")
+            if (call.find("summary") is None or len(fields) != 5
+                    or any(not "".join(field.itertext()).strip() for field in fields)):
+                raise ValueError(f"incomplete kernel input, calculation, grid, output or traffic at {phase}")
     return ids
 
 
@@ -215,7 +218,7 @@ def comparison_styles(styles, section, ids):
         return "\n".join(rules)
 
     css = filter_rules(re.sub(r"/\*.*?\*/", "", "\n".join(styles), flags=re.S))
-    if not all(s in css for s in (":root", ".page", ".pair-grid", ".qm-pair", "#slot-refresh-guide", ".gpu-three")):
+    if not all(s in css for s in (":root", ".page", ".kernel-drill")):
         raise ValueError("missing theme or comparison styles")
     if re.search(r"@import|url\s*\(|</style", css, re.I):
         raise ValueError("review external or unsupported CSS resource before export")
@@ -231,10 +234,13 @@ def export(source):
     ids = check_section(section)
     css = comparison_styles(article.styles, section, ids)
     scripts = [s for s in article.scripts if sha256(s.encode()).hexdigest() == CONTROL_SCRIPT_SHA256]
-    if len(scripts) != 1:
-        raise ValueError("GPU/slot control script changed: diff it against the previous source. "
-                         "After reviewing its interactions and offline behavior, replace "
-                         "CONTROL_SCRIPT_SHA256 with the SHA-256 of the script text (UTF-8, LF).")
+    controls = any(section.find(selector) is not None for selector in
+                   (".//button[@data-slot-frame]", ".//select[@id='gpu-sample-card']"))
+    script = ""
+    if controls:
+        if len(scripts) != 1:
+            raise ValueError("GPU/slot control script changed: review it before updating CONTROL_SCRIPT_SHA256")
+        script = f"<script>{scripts[0]}</script>"
     markup = ET.tostring(section, encoding="unicode", method="html")
     if re.search(r"(?:https?|ftp|file)://|(?:/home/|/Users/|/mnt/)|\b(?:\d{1,3}\.){3}\d{1,3}\b", markup, re.I):
         raise ValueError("review URL, filesystem path or network address in comparison content")
@@ -249,7 +255,7 @@ def export(source):
 {css}
 </style></head><body>
 <main class="page">{markup}</main>
-<script>{scripts[0]}</script>
+{script}
 </body></html>
 """
 
@@ -265,7 +271,9 @@ def preview(html_path, png_path):
                                 locale="zh-CN", offline=True)
         page.goto(html_path.resolve().as_uri())
         page.evaluate("document.fonts.ready")
-        stage = page.locator('.overview-stage[data-phase="qkv"]')
+        stage = page.locator('#compare-qkv .stage-comparison')
+        if not stage.count():
+            stage = page.locator('.overview-stage[data-phase="qkv"]')
         image = stage.screenshot(type="png", animations="disabled")
         browser.close()
     png_path.write_bytes(image)
@@ -275,7 +283,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="original complete article HTML")
     parser.add_argument("output", type=Path, help="standalone comparison HTML")
-    parser.add_argument("--preview", type=Path, metavar="PNG", help="also capture the overview's Q/KV stage with Chromium")
+    parser.add_argument("--preview", type=Path, metavar="PNG", help="also capture the Q/KV stage with Chromium")
     args = parser.parse_args()
     paths = [path.resolve() for path in (args.input, args.output, args.preview) if path]
     if len(set(paths)) != len(paths):
