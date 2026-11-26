@@ -2,7 +2,7 @@
 
 Input rows contain plain-text (variable and meaning, example value, reason) triples. The caller supplies the kernel name and decides
 whether to display the body immediately or place it inside a details element.
-Pair the returned fragment with assets/kernel-card.css.
+Use assets/kernel-card.css for card bodies and assets/kernel-memory-route.css for visible memory routes.
 """
 from html import escape
 import re
@@ -61,6 +61,33 @@ ExecutionPath = Tuple[str, str, str, str]
 
 
 OutputPath = Tuple[str, str, str]
+
+
+def render_memory_route(read: str, write: str, consumer: str, handoff: str, link: str, onchip: str, *,
+                        evidence: str = "源码逻辑量 · HBM 和链路流量未实测",
+                        call_name: str = "", link_kind: Optional[str] = None) -> str:
+    """Draw the visible data path for one call. All supplied values are plain text."""
+    def field(key: str, label: str, value: str, modifier: str = "") -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Memory route requires a nonempty {key}")
+        return (f'<div class="memory-{key}{modifier}"><dt>{label}</dt>'
+                f'<dd>{physical_text(value.strip())}</dd></div>')
+
+    if not isinstance(evidence, str) or not evidence.strip():
+        raise ValueError("Memory route requires its accounting basis")
+    link_labels = {None: "卡间通信", "local": "本卡内", "host": "主机 ↔ GPU",
+                   "peer": "跨卡执行点", "conditional": "条件跨卡", "unknown": "通信待核"}
+    if link_kind not in link_labels:
+        raise ValueError(f"Unknown memory route link kind: {link_kind!r}")
+    endpoints = (field("read", "从哪读", read) + field("write", "往哪写", write)
+                 + field("consumer", "下一读方", consumer))
+    modifier = f" memory-link-{link_kind}" if link_kind else ""
+    edges = (field("handoff", "交接搬运", handoff) + field("link", link_labels[link_kind], link, modifier)
+             + field("onchip", "片上暂存", onchip))
+    label = escape(f"{call_name} 的数据流" if call_name else "调用数据流")
+    return (f'<div class="kernel-memory-route" role="group" aria-label="{label}">'
+            f'<dl class="memory-endpoints">{endpoints}</dl><dl class="memory-edges">{edges}</dl>'
+            f'<small class="memory-evidence">{physical_text(evidence.strip())}</small></div>')
 
 
 def render_transfer_path(record: Mapping[str, str]) -> str:

@@ -1,0 +1,43 @@
+/* Keep a call’s tensor route readable even inside one half of a comparison. */
+.kernel-memory-route {
+  box-sizing: border-box; min-width: 0; max-width: 100%; padding: .3rem .45rem .24rem;
+  border-inline-start: 2px solid #9dbca9; color: #273e32; background: #f8faf8;
+  font: normal .78rem/1.48 system-ui, sans-serif; text-align: start; overflow-wrap: anywhere;
+}
+.kernel-memory-route dl { margin: 0; padding: 0; border: 0; }
+.kernel-memory-route .memory-endpoints > div {
+  display: grid; grid-template-columns: 5em minmax(0,1fr); gap: .35rem; align-items: baseline;
+  margin-inline-start: .24rem; padding: .12rem 0 .13rem .63rem; position: relative;
+  border-inline-start: 1px solid #acc4b3;
+}
+.kernel-memory-route dt, .kernel-memory-route dd { margin: 0; padding: 0; font: inherit; }
+.kernel-memory-route dt { color: #31553e; font-weight: 650; }
+.kernel-memory-route .memory-endpoints > div::before {
+  content: ""; position: absolute; inset-inline-start: -.24rem; top: .54rem;
+  width: .4rem; height: .4rem; border-radius: 50%; background: #6d9281;
+}
+.kernel-memory-route .memory-endpoints > .memory-write::before {background: #267859;}
+.kernel-memory-route .memory-endpoints > .memory-consumer::before {background: #527996;}
+.kernel-memory-route .memory-edges { margin-top: .25rem; padding-top: .19rem; border-top: 1px solid #d9e3dc; }
+.kernel-memory-route .memory-edges > div {
+  display: grid; grid-template-columns: 5.65em minmax(0,1fr); gap: .36rem; align-items: baseline; padding: .04rem 0;
+}
+.kernel-memory-route .memory-edges dt { justify-self: start; white-space: nowrap; font-size: .95em; }
+.kernel-memory-route .memory-link dt {
+  display: inline; padding: .03em .23em; border: 1px solid #c4d1c7; border-radius: .2em;
+  background: #f4f6f4; color: #42594b; white-space: nowrap;
+}
+.kernel-memory-route .memory-link-host dt { background: #eeeaf5; border-color: #cbbfdd; color: #584874; }
+.kernel-memory-route .memory-link-peer dt { background: #ffebd2; border-color: #dcb480; color: #724209; }
+.kernel-memory-route .memory-link-conditional dt { background: #eef4fb; border-color: #b8cce2; color: #305879; }
+.kernel-memory-route .memory-link-unknown dt { border-style: dashed; }
+.kernel-memory-route .memory-evidence { display: block; margin-top: .13rem; color: #52655b; font-size: .71rem; }
+@media (max-width: 650px) {
+  .kernel-memory-route { padding: .2rem .26rem; }
+  .kernel-memory-route .memory-endpoints > div { display: block; }
+  .kernel-memory-route .memory-endpoints dt, .kernel-memory-route .memory-endpoints dd { display: inline; }
+  .kernel-memory-route .memory-endpoints dt { margin-inline-end: .22em; }
+  .kernel-memory-route .memory-edges > div { display: block; margin: .08rem 0; }
+  .kernel-memory-route .memory-edges dt, .kernel-memory-route .memory-edges dd { display: inline; }
+  .kernel-memory-route .memory-edges dt { margin-inline-end: .25em; }
+}

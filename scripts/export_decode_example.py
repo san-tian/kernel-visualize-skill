@@ -5,6 +5,7 @@ import argparse
 from hashlib import sha256
 from html import escape
 from html.parser import HTMLParser
+from math import ceil, floor
 from pathlib import Path
 import re
 from xml.etree import ElementTree as ET
@@ -19,7 +20,7 @@ TAGS = set("""
 """.split())
 ATTRS = set("""
     aria-hidden aria-label aria-labelledby aria-live aria-pressed class colspan
-    data-change data-gpu-card data-kernel-role data-label data-pair-side
+    data-change data-memory-routes data-gpu-card data-kernel-role data-label data-pair-side
     data-page data-phase data-row data-slot-cell data-slot-controls data-slot-frame
     data-slot-message data-slot-route data-slot-saved-bytes data-slot-writes
     data-step hidden id name open role scope start type value
@@ -281,6 +282,46 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows,
             raise ValueError(f"missing Input, pseudocode, Output, CTA or communication at {where}")
 
 
+def check_call_routes(stage, phase, calls, collapsed):
+    """Each diagram belongs to exactly one call and is visible with that call closed."""
+    parents = {child: parent for parent in stage.iter() for child in parent}
+    routes = set(with_class(stage.iter(), "kernel-memory-route"))
+    for call in calls:
+        siblings = list(parents[call])
+        index = siblings.index(call)
+        summary = call.find("summary")
+        names = [] if summary is None else [name for name in summary.iter("code") if "".join(name.itertext()).strip()]
+        if not index or len(names) != 1 or siblings[index - 1] not in routes:
+            raise ValueError(f"expected each call to follow its own data flow diagram at {phase}")
+        route = siblings[index - 1]
+        routes.remove(route)
+        name = "".join(names[0].itertext()).strip()
+        where = f"{phase}: {name}"
+        if route.get("aria-label") != f"{name} 的数据流":
+            raise ValueError(f"data flow diagram belongs to a different call at {where}")
+        if (route in collapsed) != (call in collapsed):
+            raise ValueError(f"expected the diagram to be visible with its call at {where}")
+        # A nested call can live in a parent disclosure. Its own diagram must
+        # still need no click once that parent is open.
+        if any(el.tag == "details" or "hidden" in el.attrib for el in route.iter()):
+            raise ValueError(f"hidden read/write data inside the diagram at {where}")
+        for field in ("read", "write", "consumer", "handoff", "link", "onchip"):
+            rows = with_class(route.iter(), "memory-" + field)
+            values = [] if len(rows) != 1 else rows[0].findall("dd")
+            if len(values) != 1 or not "".join(values[0].itertext()).strip():
+                raise ValueError(f"missing or ambiguous {field} in the diagram at {where}")
+        link = with_class(route.iter(), "memory-link")[0]
+        kinds = {c for c in link.get("class", "").split() if c.startswith("memory-link-")}
+        if len(kinds) != 1 or next(iter(kinds)) not in {
+                "memory-link-local", "memory-link-host", "memory-link-peer", "memory-link-conditional", "memory-link-unknown"}:
+            raise ValueError(f"expected a single link classification at {where}")
+        labels = with_class(route.iter(), "memory-evidence")
+        if len(labels) != 1 or not "".join(labels[0].itertext()).strip():
+            raise ValueError(f"missing byte accounting basis in the diagram at {where}")
+    if routes:
+        raise ValueError(f"data flow diagram without a matching call at {phase}")
+
+
 def check_stage_reading_order(stage, phase, calls, collapsed):
     """A reader can follow the forward path with the explanatory panels closed."""
     bodies = with_class(stage, "stage-body")
@@ -342,6 +383,7 @@ def check_section(section):
                 for child in panel:
                     if child.tag != "summary":
                         collapsed.update(child.iter())
+    per_call_routes = any(node.get("data-memory-routes") == "per-call" for node in section.iter())
     ordered = "stage-reading-order" in classes
     if ordered and not continuous:
         raise ValueError("the forward timeline must keep all stage headings visible")
@@ -386,6 +428,8 @@ def check_section(section):
                  and (el.find("dl") is not None or not {"kernel-chain", "call-group"} & set(el.get("class", "").split()))]
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
+        if per_call_routes:
+            check_call_routes(stage, phase, calls, collapsed)
         if ordered:
             check_stage_reading_order(stage, phase, calls, collapsed)
         for call in calls:
@@ -457,6 +501,8 @@ def comparison_styles(styles, section, ids):
         raise ValueError("missing theme or comparison styles")
     if "kernel-card" in classes and not re.search(r"\.kernel-card(?![\w-])", css):
         raise ValueError("missing shared kernel card styles")
+    if "kernel-memory-route" in classes and ".kernel-memory-route" not in css:
+        raise ValueError("missing per-call memory diagram styles")
     if re.search(r"@import|url\s*\(|</style", css, re.I):
         raise ValueError("review external or unsupported CSS resource before export")
     return "\n".join(line.rstrip() for line in css.splitlines())
@@ -517,7 +563,23 @@ def preview(html_path, png_path):
             stage = page.locator("#compare-qkv .stage-comparison")
         if not stage.count():
             stage = page.locator('.overview-stage[data-phase="qkv"]')
-        image = stage.screenshot(type="png", animations="disabled")
+        if stage.locator(".kernel-memory-route").count():
+            # Crop both comparison columns to the current shrink/expand pair.
+            # The old sequence continues below it and remains intact in the HTML.
+            table = stage.locator(".stage-comparison")
+            header = table.locator(".operation-head")
+            current = table.locator('.operation-row [data-pair-side="after"]').last
+            final_call = current.locator("details.kernel-drill").last
+            top = header.bounding_box()["y"]
+            last = final_call.bounding_box()
+            height = ceil(last["y"] + last["height"] - top) + 4
+            page.set_viewport_size({"width": 1200, "height": height + 16})
+            header.evaluate("e => window.scrollTo(0, window.scrollY + e.getBoundingClientRect().top - 4)")
+            box = header.bounding_box()
+            clip = {"x": floor(box["x"]), "y": floor(box["y"]), "width": ceil(box["width"]), "height": height}
+            image = page.screenshot(type="png", clip=clip, animations="disabled")
+        else:
+            image = stage.screenshot(type="png", animations="disabled")
         browser.close()
     png_path.write_bytes(image)
 
