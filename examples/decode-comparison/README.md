@@ -77,12 +77,12 @@ H_Q[2, 0:16] = bf16(acc)
 
 ## 同步博客更新
 
-此案例取自 `cp4-compression-and-multi-lora-decode.html` 的 `#decode-comparison`。维护这张博客对照页时，在同一轮修改中从定稿 HTML 更新 `index.html` 和 `qkv.png`。网页里的批量、形状、分块和统计口径也随正文导出。
+此案例取自独立教学页《一轮 Decode 的前向计算》，入口是 `decode-forward.html`，正文锚点是 `#decode-comparison`。更新这篇教学页时，在同一轮修改中从定稿 HTML 重新生成 `index.html` 和 `qkv.png`。网页里的批量、形状、分块和统计口径也随正文导出。
 
-在 skill 仓库根目录运行下列命令，把第一个参数换成本地博客入口的路径。新版博客采用轻量入口，导出器读取入口 `<head>` 的 `article-full-source` 标记，再从同目录的 `cp4-compression-and-multi-lora-decode-full.html` 提取完整对照页。请将入口和全文一起保存在发布目录，也可以直接传入完整 HTML；旧版单文件文章沿用原命令。生成 HTML 使用 Python 3，截取预览需要 Playwright、Chromium 和支持中文的字体。
+在 skill 仓库根目录运行下列命令，把第一个参数换成本地发布目录中的 `decode-forward.html`。导出器读取入口 `<head>` 的 `article-full-source` 标记，从同目录的 `decode-forward-full.html` 提取完整正文。也可以直接传入这份全文，或传入仍含该节的历史单文件文章。生成 HTML 使用 Python 3，截取预览需要 Playwright、Chromium 和支持中文的字体。
 
 ```sh
-python3 scripts/export_decode_example.py /path/to/cp4-compression-and-multi-lora-decode.html \
+python3 scripts/export_decode_example.py /path/to/decode-forward.html \
   examples/decode-comparison/index.html --preview examples/decode-comparison/qkv.png
 ```
 

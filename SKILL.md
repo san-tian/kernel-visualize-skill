@@ -80,6 +80,6 @@ description: 讲解 CUDA、Triton 等 GPU kernel 的发射与计算流程。适�
 
 ## Git 同步与发布
 
-维护原第 7、8 页合并的 Decode 对照页时，同一次更新也要从定稿页面重新导出本案例和预览，并在 GitHub 同步有变化的文件。导出入口和核对方法见[案例维护说明](examples/decode-comparison/README.md#同步博客更新)。
+维护独立教学页《一轮 Decode 的前向计算》时，从定稿页面重新导出本案例和预览，并在同一次更新中把有变化的文件同步到 GitHub。导出入口和核对方法见[案例维护说明](examples/decode-comparison/README.md#同步博客更新)。
 
 仓库为 [san-tian/kernel-visualize-skill](https://github.com/san-tian/kernel-visualize-skill)。首次发布初始化 `main`。后续变更方式待用户选择，通用约定见 [skill4skill](https://github.com/san-tian/skill4skill/blob/main/SKILL.md#git-同步与发布)。
