@@ -1,0 +1,49 @@
+/* Progressive enhancement for opened kernel cards with long pseudocode lines. */
+.kernel-card .card-program > dt:has(.kernel-code-zoom) {
+  display: flex; align-items: baseline; justify-content: space-between;
+  flex-wrap: wrap; gap: .15rem .45rem;
+}
+.kernel-card button.kernel-code-zoom, dialog.kernel-code-reader button.kernel-code-close {
+  box-sizing: border-box; max-width: 100%; margin: 0; padding: .2rem .55rem;
+  border: 1px solid #8eaaa0; border-radius: .3rem; background: #fff; color: #254e3e;
+  font: 600 .79rem/1.5 system-ui, sans-serif; white-space: nowrap;
+}
+.kernel-card button.kernel-code-zoom { cursor: zoom-in; }
+dialog.kernel-code-reader button.kernel-code-close { cursor: pointer; flex: none; }
+.kernel-card button.kernel-code-zoom:focus-visible,
+dialog.kernel-code-reader :is(button, pre):focus-visible {
+  outline: 2px solid #337051; outline-offset: 2px;
+}
+dialog.kernel-code-reader {
+  box-sizing: border-box; width: min(88rem, calc(100% - 2rem)); max-width: none;
+  max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); margin: auto; padding: 0;
+  border: 1px solid #91aa9e; border-radius: .55rem; background: #fff; color: #263c34;
+  box-shadow: 0 .7rem 2.4rem #203c352b; overflow: auto;
+}
+dialog.kernel-code-reader[open] { display: flex; flex-direction: column; }
+dialog.kernel-code-reader::backdrop { background: #1e322b85; }
+.kernel-code-reader-header {
+  display: flex; align-items: center; justify-content: space-between; gap: .65rem;
+  padding: .65rem .85rem; border-bottom: 1px solid #d1ded7;
+}
+.kernel-code-reader-header h2 {
+  min-width: 0; margin: 0; padding: 0; border: 0; background: transparent;
+  font: 650 .98rem/1.45 ui-monospace, monospace; overflow-wrap: anywhere;
+}
+dialog.kernel-code-reader > pre {
+  box-sizing: border-box; min-width: 0; min-height: 0; max-width: 100%;
+  margin: 0; padding: .85rem; overflow: auto; overscroll-behavior: contain;
+  border: 0; border-radius: 0; background: #f4f8f5; color: #1f4138;
+  text-align: start; white-space: pre !important; overflow-wrap: normal; word-break: normal;
+}
+dialog.kernel-code-reader > pre > code {
+  display: block; width: max-content; max-width: none; margin: 0; padding: 0;
+  border: 0; background: transparent; color: inherit; tab-size: 4;
+  font: normal .91rem/1.55 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  white-space: pre !important; overflow-wrap: normal; word-break: normal;
+}
+@media (max-width: 620px) {
+  dialog.kernel-code-reader { width: calc(100% - .8rem); max-height: calc(100vh - .8rem); max-height: calc(100dvh - .8rem); }
+  .kernel-code-reader-header { padding: .5rem .6rem; }
+  dialog.kernel-code-reader > pre { padding: .6rem; }
+}

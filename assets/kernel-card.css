@@ -1,0 +1,180 @@
+/* A kernel card can sit inside a diagram, comparison column, or disclosure. */
+dl.kernel-card {
+  box-sizing: border-box;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  margin: .35rem 0 .6rem;
+  padding: 0;
+  border: 1px solid #c5d8d0;
+  border-radius: .4rem;
+  background: #fff;
+  color: #263c34;
+  text-align: start;
+}
+.kernel-card > div {
+  min-width: 0;
+  margin: 0;
+  padding: .56rem .68rem;
+  border: 0;
+  border-bottom: 1px solid #dde7e2;
+}
+.kernel-card > div:last-child { border-bottom: 0; }
+.kernel-card > div > dt {
+  margin: 0 0 .22rem;
+  color: #205c49;
+  font: 650 .83rem/1.45 system-ui, sans-serif;
+}
+.kernel-card > div > dd {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font: normal .89rem/1.56 system-ui, sans-serif;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.kernel-card dd p { margin: .25rem 0 0; }
+.kernel-card .tensor-signature, .kernel-card .kernel-pseudocode > code {
+  box-sizing: border-box;
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1f4138;
+  font: normal .85rem/1.55 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  tab-size: 4;
+}
+.kernel-card .tensor-signature {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.kernel-card .kernel-pseudocode > code {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.kernel-card pre.kernel-pseudocode {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: .55rem .65rem;
+  border: 0;
+  border-inline-start: 2px solid #7da996;
+  border-radius: .18rem;
+  background: #eff5f1;
+  text-align: start;
+  /* The article theme forces wrapping on generic pre elements. */
+  white-space: pre !important;
+  overflow-wrap: normal;
+  word-break: normal;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.kernel-card pre.kernel-pseudocode:focus-visible {
+  outline: 2px solid #376851;
+  outline-offset: 1px;
+}
+.kernel-card .tensor-size {
+  display: grid;
+  gap: .14rem;
+  margin: .3rem 0 0;
+  padding: .1rem .45rem;
+  border-inline-start: 2px solid #a8c4b7;
+  color: #3c594e;
+  font-size: .84rem;
+  font-variant-numeric: tabular-nums;
+}
+.kernel-card .tensor-size > span { display: block; margin: 0; }
+.kernel-card .card-grid, .kernel-card .card-traffic { background: #f7f9f8; }
+.kernel-card .card-traffic { border-radius: 0 0 .4rem .4rem; }
+.kernel-card sub { font-size: .75em; line-height: 0; }
+
+/* A variable, its example and its origin stay together in narrow comparison columns. */
+.kernel-card table.input-variables {
+  display: table; width: 100%; table-layout: fixed; border-collapse: collapse;
+  margin: .12rem 0 .2rem; color: inherit; background: transparent; border: 0;
+}
+.kernel-card .input-variables thead { display: table-header-group; }
+.kernel-card .input-variables tbody { display: table-row-group; }
+.kernel-card .input-variables tr { display: table-row; background: transparent; }
+.kernel-card .input-variables th, .kernel-card .input-variables td {
+  display: table-cell; width: auto; padding: .3rem .24rem; border: 0;
+  border-bottom: 1px solid #e0e8e3; background: transparent;
+  color: inherit; font: inherit; text-align: start; vertical-align: top;
+  white-space: normal; overflow-wrap: anywhere;
+}
+.kernel-card .input-variables th:first-child { width: 33%; }
+.kernel-card .input-variables thead th { color: #50665b; font-size: .76rem; font-weight: 650; }
+.kernel-card .input-variables tbody th { font-size: .85rem; }
+.kernel-card .input-variables tbody th code { display: block; padding: 0; border: 0; border-radius: 0; background: none; color: #1f4138; font-weight: 650; white-space: normal; }
+.kernel-card .input-variables .variable-example { display: block; color: #203e32; }
+.kernel-card .input-variables .variable-reason { display: block; color: #4a5e53; font-size: .83rem; }
+.kernel-card .input-variables td::before { content: none; }
+.kernel-card .input-extent { margin: .24rem 0 0; border: 0; padding: 0; background: transparent; }
+.kernel-card .input-extent > summary {
+  margin: 0; padding: .15rem 0; cursor: pointer; color: #36594b;
+  font-size: .82rem; line-height: 1.45; text-align: start;
+}
+
+.entry-kind {
+  display: inline-block;
+  max-width: 100%;
+  margin-inline-end: .4rem;
+  padding: .04rem .34rem;
+  border-radius: .22rem;
+  background: #eef0ee;
+  color: #46564e;
+  font: 650 .73rem/1.5 system-ui, sans-serif;
+  vertical-align: baseline;
+}
+.entry-kind.kind-kernel { background: #dcefe7; color: #18543d; }
+.entry-kind.kind-torch, .entry-kind.kind-library { background: #e8eef8; color: #334e74; }
+.entry-kind.kind-copy, .entry-kind.kind-collective { background: #f5ecdd; color: #664a29; }
+.kernel-card .dispatch-boundary { display: block; margin-bottom: .22rem; font-weight: 600; }
+
+.kernel-card .call-backend { margin: .12rem 0 .42rem; font-size: .86rem; line-height: 1.5; }
+.kernel-card .call-backend .backend-name { display: block; font-weight: 650; color: #254d3d; }
+
+.kernel-card .call-execution { margin: .16rem 0 .55rem; font-size: .86rem; line-height: 1.5; }
+.kernel-card .call-execution > div {
+  display: flex; flex-wrap: wrap; align-items: baseline; column-gap: .54rem;
+  padding: .28rem 0; border-bottom: 1px solid #e0e8e3;
+}
+.kernel-card .execution-label { flex: 0 0 5.8em; white-space: nowrap; font-weight: 650; color: #365548; }
+.kernel-card .execution-value { flex: 1 1 13em; min-width: 0; overflow-wrap: anywhere; }
+.kernel-card .execution-api .execution-value { font-family: ui-monospace, Consolas, monospace; }
+
+/* Follow one stored tensor from its producer to its next reader. */
+.transfer-route {
+  display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1.25fr) auto minmax(0,1fr);
+  align-items: stretch; gap: .16rem; margin-bottom: .45rem;
+}
+.transfer-route > div { min-width: 0; padding: .31rem .38rem; border: 1px solid #d2dcd6; border-radius: .24rem; background: #fafcfb; }
+.transfer-route > .transfer-buffer { border-color: #96b2a3; background: #edf4ef; }
+.transfer-route small { display: block; color: #53675d; font-size: .7rem; line-height: 1.4; }
+.transfer-route span { display: block; font-size: .81rem; line-height: 1.45; overflow-wrap: anywhere; }
+.transfer-arrow { align-self: center; font-style: normal; color: #648074; }
+dl.transfer-facts { margin: 0; padding: 0; border: 0; }
+.transfer-facts > div { display: grid; grid-template-columns: 6em minmax(0,1fr); gap: .38rem; align-items: baseline; padding: .2rem 0; border-bottom: 1px solid #e2e8e4; }
+.transfer-facts > div:last-child { border: 0; }
+.transfer-facts dt, .transfer-facts dd { margin: 0; line-height: 1.5; font-size: .81rem; overflow-wrap: anywhere; }
+.transfer-facts dt { font-weight: 580; color: #495e53; }
+.transfer-facts .transfer-write dd { font-weight: 680; color: #213e31; }
+.transfer-facts .transfer-link dd { color: #114c70; }
+.kernel-card .output-path { margin-top: .45rem; padding-top: .24rem; border-top: 1px solid #dce6e0; font-size: .85rem; }
+.kernel-card .output-path > div { margin: .16rem 0; }
+.kernel-card .output-path > div > span { font-weight: 650; color: #365548; margin-inline-end: .35rem; }
+@media (max-width: 740px) {
+  .transfer-route { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .transfer-route > div { padding: .16rem .32rem; }
+  .transfer-arrow { justify-self: center; transform: rotate(90deg); line-height: .9; }
+  .transfer-facts > div { display: block; padding: .24rem 0; }
+  .transfer-facts dt { font-size: .72rem; }
+}

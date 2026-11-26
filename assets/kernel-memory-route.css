@@ -1,0 +1,110 @@
+/* Keep a call’s tensor route readable even inside one half of a comparison. */
+.kernel-memory-route {
+  box-sizing: border-box; min-width: 0; max-width: 100%; padding: .3rem .45rem .24rem;
+  border-inline-start: 2px solid #9dbca9; color: #273e32; background: #f8faf8;
+  font: normal .78rem/1.48 system-ui, sans-serif; text-align: start; overflow-wrap: anywhere;
+}
+.kernel-memory-route dl { margin: 0; padding: 0; border: 0; }
+.kernel-memory-route .memory-endpoints > div {
+  display: grid; grid-template-columns: 5em minmax(0,1fr); gap: .35rem; align-items: baseline;
+  margin-inline-start: .24rem; padding: .12rem 0 .13rem .63rem; position: relative;
+  border-inline-start: 1px solid #acc4b3;
+}
+.kernel-memory-route dt, .kernel-memory-route dd { margin: 0; padding: 0; font: inherit; }
+.kernel-memory-route dt { color: #31553e; font-weight: 650; }
+.kernel-memory-route .memory-endpoints > div::before {
+  content: ""; position: absolute; inset-inline-start: -.24rem; top: .54rem;
+  width: .4rem; height: .4rem; border-radius: 50%; background: #6d9281;
+}
+.kernel-memory-route .memory-endpoints > .memory-write::before {background: #267859;}
+.kernel-memory-route .memory-endpoints > .memory-consumer::before {background: #527996;}
+.kernel-memory-route .memory-edges { margin-top: .25rem; padding-top: .19rem; border-top: 1px solid #d9e3dc; }
+.kernel-memory-route .memory-edges > div {
+  display: grid; grid-template-columns: 5.65em minmax(0,1fr); gap: .36rem; align-items: baseline; padding: .04rem 0;
+}
+.kernel-memory-route .memory-edges dt { justify-self: start; white-space: nowrap; font-size: .95em; }
+.kernel-memory-route .memory-link dt {
+  display: inline; padding: .03em .23em; border: 1px solid #c4d1c7; border-radius: .2em;
+  background: #f4f6f4; color: #42594b; white-space: nowrap;
+}
+.kernel-memory-route .memory-link-host dt { background: #eeeaf5; border-color: #cbbfdd; color: #584874; }
+.kernel-memory-route .memory-link-peer dt { background: #ffebd2; border-color: #dcb480; color: #724209; }
+.kernel-memory-route .memory-link-conditional dt { background: #eef4fb; border-color: #b8cce2; color: #305879; }
+.kernel-memory-route .memory-link-unknown dt { border-style: dashed; }
+.kernel-memory-route .memory-evidence { display: block; margin-top: .13rem; color: #52655b; font-size: .71rem; }
+@media (max-width: 650px) {
+  .kernel-memory-route { padding: .2rem .26rem; }
+  .kernel-memory-route .memory-endpoints > div { display: block; }
+  .kernel-memory-route .memory-endpoints dt, .kernel-memory-route .memory-endpoints dd { display: inline; }
+  .kernel-memory-route .memory-endpoints dt { margin-inline-end: .22em; }
+  .kernel-memory-route .memory-edges > div { display: block; margin: .08rem 0; }
+  .kernel-memory-route .memory-edges dt, .kernel-memory-route .memory-edges dd { display: inline; }
+  .kernel-memory-route .memory-edges dt { margin-inline-end: .25em; }
+}
+
+/* Each call owns its visible I/O and its disclosure under a single heading. */
+.kernel-step {
+  box-sizing: border-box; min-width: 0; padding: .4rem .55rem .2rem;
+  margin: .45rem 0; border: 1px solid #d6e1db; border-radius: .3rem;
+  color: #263d32; background: #fff; text-align: start; overflow-wrap: anywhere;
+}
+.kernel-step-heading {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .12rem .55rem;
+  padding-bottom: .28rem; border-bottom: 1px solid #d7e2db;
+}
+.kernel-step-heading > code { font: 650 .86rem/1.45 ui-monospace, monospace; }
+.kernel-step-heading > .entry-kind { font: 500 .72rem/1.45 system-ui, sans-serif; color: #50665a; }
+.kernel-io {
+  min-width: 0; padding: 0; color: #293d34;
+  font: normal .84rem/1.55 system-ui, sans-serif; overflow-wrap: anywhere;
+}
+.kernel-io > div { padding: .3rem 0; }
+.kernel-io .card-output-route { border-top: 1px solid #e2e8e4; }
+.kernel-io .io-heading {
+  display: block; margin: 0 0 .12rem; color: #244a38; font-size: .84rem; font-weight: 670;
+}
+.kernel-io > div > dl, .kernel-io > div > dl > div > dt, .kernel-io > div > dl > div > dd { margin: 0; padding: 0; border: 0; background: none; }
+.kernel-io > div > dl > div {
+  display: grid; grid-template-columns: 5.5em minmax(0, 1fr); align-items: baseline;
+  gap: .35rem; padding: .05rem 0;
+}
+.kernel-io > div > dl > div > dt { justify-self: start; color: #4f6559; font: 580 .78rem/1.5 system-ui, sans-serif; }
+.kernel-io > div > dl > div > dd { min-width: 0; color: inherit; font: inherit; }
+.kernel-io .memory-handoff dd { white-space: pre-line; }
+.kernel-io .memory-link-host dt { color: #624982; }
+.kernel-io .memory-link-peer dt { color: #804b0c; }
+.kernel-io .memory-link-conditional dt { color: #315c82; }
+.kernel-io .memory-evidence { display: block; margin: 0 0 .22rem; font-size: .73rem; color: #506459; }
+.kernel-io + .kernel-drill, .kernel-io > [data-launch-scope] > .kernel-drill { margin: 0; }
+.kernel-io + .kernel-drill > summary, .kernel-io > [data-launch-scope] > .kernel-drill > summary { width: fit-content; max-width: 100%; cursor: pointer; color: #375e4b; }
+.kernel-io + .kernel-drill > summary > code, .kernel-io + .kernel-drill > summary > .entry-kind,
+.kernel-io > [data-launch-scope] > .kernel-drill > summary > code,
+.kernel-io > [data-launch-scope] > .kernel-drill > summary > .entry-kind { display: none; }
+.kernel-io + .kernel-drill > summary:focus-visible, .kernel-io > [data-launch-scope] > .kernel-drill > summary:focus-visible { outline: 2px solid #376851; outline-offset: 2px; }
+.kernel-io + .kernel-drill > .paired-detail, .kernel-io > [data-launch-scope] > .kernel-drill > .paired-detail {
+  margin: .3rem 0 0; padding: 0; border: 0; border-top: 1px solid #d7e2db;
+  border-radius: 0; box-shadow: none;
+}
+@media (max-width: 650px) {
+  .kernel-step { padding: .3rem .35rem .16rem; }
+  .kernel-io > div > dl > div { display: block; padding: .11rem 0; }
+  .kernel-io > div > dl > div > dt, .kernel-io > div > dl > div > dd { display: inline; }
+  .kernel-io > div > dl > div > dt { margin-inline-end: .4em; }
+}
+
+/* Only a documented device launch receives an enclosing hardware boundary. */
+.kernel-io > .kernel-execution-boundary {
+  margin: .1rem 0 .22rem; padding: .34rem .53rem .38rem;
+  border: 2px solid #37745d; border-radius: .28rem; background: #f2f8f4;
+}
+.kernel-io > .kernel-execution-boundary[data-launch-scope="continuation"] {
+  border-style: dashed; background: #f8faf8;
+}
+.kernel-io > .kernel-execution-boundary + .card-output-route { border-top: 0; }
+.kernel-io > .call-implementation-scope {
+  margin: .08rem 0 .17rem; padding: .27rem .5rem; background: #f4f5f3;
+}
+.kernel-io .scope-heading {
+  display: block; margin: 0 0 .1rem; color: #245b44; font-weight: 680; font-size: .84rem;
+}
+.kernel-io .call-implementation-scope > .scope-heading { color: #48554e; }
