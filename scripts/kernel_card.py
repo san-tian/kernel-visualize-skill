@@ -345,7 +345,8 @@ def render_card_body(
         grid_html = f'<span class="dispatch-boundary">{physical_text(boundary.strip())}</span>' + grid_html
 
     code = escape(program.strip("\r\n"))
-    program_html = f'<pre class="kernel-pseudocode"><code>{code}</code></pre>'
+    program_html = ('<pre class="kernel-pseudocode" tabindex="0" role="region" '
+                    f'aria-label="伪代码，可横向滚动查看长行"><code>{code}</code></pre>')
     if execution is not None:
         if backend is not None:
             raise ValueError("Provide either execution or the legacy backend description")

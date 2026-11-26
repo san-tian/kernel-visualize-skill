@@ -45,9 +45,19 @@ dl.kernel-card {
   background: transparent;
   color: #1f4138;
   font: normal .85rem/1.55 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  tab-size: 4;
+}
+.kernel-card .tensor-signature {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  tab-size: 4;
+}
+.kernel-card .kernel-pseudocode > code {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .kernel-card pre.kernel-pseudocode {
   box-sizing: border-box;
@@ -60,7 +70,16 @@ dl.kernel-card {
   border-radius: .18rem;
   background: #eff5f1;
   text-align: start;
-  white-space: pre-wrap;
+  /* The article theme forces wrapping on generic pre elements. */
+  white-space: pre !important;
+  overflow-wrap: normal;
+  word-break: normal;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.kernel-card pre.kernel-pseudocode:focus-visible {
+  outline: 2px solid #376851;
+  outline-offset: 1px;
 }
 .kernel-card .tensor-size {
   display: grid;

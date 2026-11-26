@@ -113,7 +113,10 @@ class SectionParser(HTMLParser):
             values.pop("hidden", None)
         if tag == "a":
             values.pop("href", None)
-        if set(values) - ATTRS:
+        allowed = ATTRS
+        if tag == "pre" and values.get("class") == "kernel-pseudocode" and values.get("tabindex") == "0":
+            allowed = ATTRS | {"tabindex"}
+        if set(values) - allowed:
             raise ValueError(f"review unexpected attributes on <{tag}> before export")
         self.tree.start("span" if tag == "a" else tag, {k: v or "" for k, v in values.items()})
         if tag == "br":
@@ -733,6 +736,16 @@ def comparison_styles(styles, section, ids):
     return "\n".join(line.rstrip() for line in css.splitlines())
 
 
+def code_reader_assets(section):
+    """Inline the optional wide reader from this skill, including in offline examples."""
+    if section.find(".//pre[@class='kernel-pseudocode'][@tabindex='0']") is None:
+        return "", ""
+    assets = Path(__file__).resolve().parents[1] / "assets"
+    css = (assets / "kernel-code-reader.css").read_text(encoding="utf-8")
+    js = (assets / "kernel-code-reader.js").read_text(encoding="utf-8")
+    return css, f"<script>{js}</script>"
+
+
 def export(source, article=None):
     if article is None:
         article = ArticleParser(source)
@@ -744,6 +757,7 @@ def export(source, article=None):
         raise ValueError("missing #decode-comparison heading")
     ids = check_section(section)
     css = comparison_styles(article.styles, section, ids)
+    reader_css, reader_script = code_reader_assets(section)
     scripts = [s for s in article.scripts if sha256(s.encode()).hexdigest() == CONTROL_SCRIPT_SHA256]
     controls = any(section.find(selector) is not None for selector in
                    (".//button[@data-slot-frame]", ".//select[@id='gpu-sample-card']"))
@@ -764,9 +778,11 @@ def export(source, article=None):
 <title>{title}</title>
 <style>
 {css}
+{reader_css}
 </style></head><body>
 <main class="page">{markup}</main>
 {script}
+{reader_script}
 </body></html>
 """
 
