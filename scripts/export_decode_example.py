@@ -5,6 +5,7 @@ import argparse
 from hashlib import sha256
 from html import escape
 from html.parser import HTMLParser
+from itertools import groupby
 from math import ceil, floor
 from pathlib import Path
 import re
@@ -20,7 +21,7 @@ TAGS = set("""
 """.split())
 ATTRS = set("""
     aria-hidden aria-label aria-labelledby aria-live aria-pressed class colspan
-    data-change data-memory-routes data-call-io data-call-details data-launch-boundaries data-launch-scope data-io-defaults data-link-kind data-gpu-card data-kernel-role data-label data-pair-side
+    data-change data-memory-routes data-call-io data-call-details data-launch-boundaries data-launch-scope data-io-defaults data-link-kind data-reader-order data-reader-next data-gpu-card data-kernel-role data-label data-pair-side
     data-page data-phase data-row data-slot-cell data-slot-controls data-slot-frame
     data-slot-message data-slot-route data-slot-saved-bytes data-slot-writes
     data-step hidden id name open role scope start type value
@@ -377,7 +378,37 @@ def check_execution_scope(scope, call, badge, where, *, shared_defaults=False):
     return ledger
 
 
-def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False, shared_defaults=False):
+def adjacent_calls(stage):
+    """Map producers to their following card at the same stage, side and nesting level."""
+    following = {}
+
+    def connect(steps):
+        following.update(zip(steps, steps[1:]))
+
+    def top_level(block):
+        return [step for calls in with_class(block.iter(), "execution-calls")
+                for step in with_class(calls, "kernel-step")]
+
+    for common in with_class(stage.iter(), "execution-common"):
+        connect(top_level(common))
+    for members in with_class(stage.iter(), "kernel-members"):
+        connect(with_class(members, "kernel-step"))
+    for figure in with_class(stage.iter(), "stage-comparison"):
+        # A shared block between comparisons ends both lanes. Within a run
+        # of paired rows, follow each column across the action headings.
+        for paired, run in groupby(figure, lambda el: "operation-row" in el.get("class", "").split()):
+            if paired:
+                rows = list(run)
+                for side in ("before", "after"):
+                    connect([step for row in rows for cell in row if cell.get("data-pair-side") == side
+                             for step in top_level(cell)])
+            else:
+                for block in with_class(run, "common-lane"):
+                    connect(top_level(block))
+    return following
+
+
+def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False, shared_defaults=False, adjacent=False):
     """Each call owns a visible Input and Output, even when nested inside a composite."""
     def only(nodes, role):
         matches = with_class(nodes, role)
@@ -388,6 +419,7 @@ def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False, sh
     def content(el):
         return "".join(el.itertext()).strip()
 
+    following = adjacent_calls(stage) if adjacent else {}
     parents = {child: parent for parent in stage.iter() for child in parent}
     steps = set(with_class(stage.iter(), "kernel-step"))
     unclaimed_io = set(with_class(stage.iter(), "kernel-io"))
@@ -454,7 +486,14 @@ def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False, sh
             raise ValueError(f"expected Input, Output and one byte accounting basis at {where}")
         unclaimed_facts.remove(evidence)
         links = []
-        output_fields = ("write", "consumer")
+        output_fields = ("write",)
+        if "data-reader-next" in io.attrib:
+            next_step = following.get(step)
+            next_label = next_step.find("./div[@class='kernel-step-heading']/code") if next_step is not None else None
+            if next_label is None or content(next_label) != io.get("data-reader-next"):
+                raise ValueError(f"implied reader must match the next card in the same execution path at {where}")
+        else:
+            output_fields += ("consumer",)
         if not shared_defaults or with_class(output_box.iter(), "memory-handoff"):
             output_fields += ("handoff",)
         for box, label, fields in ((input_box, "Input", input_fields),
@@ -619,6 +658,14 @@ def check_section(section):
             if node.tag == "details" or "hidden" in node.attrib or node.get("aria-hidden") == "true":
                 raise ValueError("the shared I/O guide must be visible with all details closed")
             node = parents[node]
+    order_roots = [el for el in section.iter() if "data-reader-order" in el.attrib]
+    adjacent = bool(order_roots)
+    if adjacent and (order_roots != default_roots or order_roots[0].get("data-reader-order") != "adjacent"
+                     or "stage-reading-order" not in classes):
+        raise ValueError("declare adjacent readers on the timeline's shared-defaults root")
+    if any("data-reader-next" in el.attrib and (not adjacent or "kernel-io" not in el.get("class", "").split())
+           for el in section.iter()):
+        raise ValueError("an implied reader belongs on its producer's I/O in an adjacent-reader timeline")
     if has_scope_markup != explicit:
         raise ValueError("explicit execution scopes require a launch-boundaries marker")
     if "card-input-route" in classes and not integrated:
@@ -678,7 +725,8 @@ def check_section(section):
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         if integrated:
-            check_integrated_calls(stage, phase, calls, collapsed, explicit=explicit, shared_defaults=shared_defaults)
+            check_integrated_calls(stage, phase, calls, collapsed, explicit=explicit,
+                                   shared_defaults=shared_defaults, adjacent=adjacent)
         elif per_call_routes:
             check_call_routes(stage, phase, calls, collapsed, implementation_details=implementation_details)
         if ordered:

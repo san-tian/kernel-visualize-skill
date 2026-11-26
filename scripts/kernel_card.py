@@ -127,7 +127,8 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
                          evidence: str = _LOGICAL_VOLUME, link_side: Optional[str] = None,
                          input_link: Optional[str] = None, launch_scope: Optional[str] = None,
                          work: str = "", boundary_note: str = "",
-                         shared_defaults: Optional[AbstractSet[str]] = None) -> str:
+                         shared_defaults: Optional[AbstractSet[str]] = None,
+                         reader_next: Optional[str] = None) -> str:
     """Render Input, the implementation and its disclosure, then Output for one call.
 
     io holds plain text for (read, write, consumer, handoff, link, onchip). Name,
@@ -149,7 +150,10 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
 
     When the article explains shared defaults up front, pass a set naming only
     the onchip, handoff or local link fields covered by that explanation. An
-    empty set keeps all fields. Standalone cards retain all fields by default.
+    empty set keeps those fields. If the page explains how to follow a single
+    execution lane, reader_next can name the unique, immediately following
+    card that reads this output. The exporter checks the name against the
+    actual card order. Standalone cards retain the written reader by default.
     """
     if not isinstance(name, str) or not name.strip():
         raise ValueError("A call template requires its source call name")
@@ -171,7 +175,13 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
     input_rows = _memory_field("read", "读取", read)
     if launch_scope is None:
         input_rows += _memory_field("onchip", "片上暂存", onchip)
-    output_rows = _memory_field("write", "写入", write) + _memory_field("consumer", "下一读方", consumer)
+    output_rows = _memory_field("write", "写入", write)
+    if reader_next is None:
+        output_rows += _memory_field("consumer", "下一读方", consumer)
+    else:
+        if shared_defaults is None or not isinstance(reader_next, str) or not reader_next.strip():
+            raise ValueError("An implicit reader requires a shared guide and the next card's full name")
+        kind_attr += f' data-reader-next="{escape(reader_next, quote=True)}"'
     if "handoff" not in omitted:
         output_rows += _memory_field("handoff", "交接搬运", handoff)
     if link_side not in (None, "input", "output"):
