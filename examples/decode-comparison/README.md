@@ -77,7 +77,7 @@ H_Q[2, 0:16] = bf16(acc)
 
 ## 同步博客更新
 
-此案例取自独立教学页《一轮 Decode 的前向计算》，入口是 `decode-forward.html`，正文锚点是 `#decode-comparison`。更新这篇教学页时，在同一轮修改中从定稿 HTML 重新生成 `index.html` 和 `qkv.png`。网页里的批量、形状、分块和统计口径也随正文导出。
+此案例取自独立教学页《一轮 Decode 的前向计算》，入口是 `decode-forward.html`，正文锚点是 `#decode-comparison`。线上入口直接返回九个阶段和前后对照图的 HTML。展开调用时才加载设备调用详情。离线示例把全部详情写在同一个文件里，断网也可以展开。更新这篇教学页时，在同一轮修改中从定稿 HTML 重新生成 `index.html` 和 `qkv.png`。网页里的批量、形状、分块和统计口径也随正文导出。
 
 在 skill 仓库根目录运行下列命令，把第一个参数换成本地发布目录中的 `decode-forward.html`。导出器读取入口 `<head>` 的 `article-full-source` 标记，从同目录的 `decode-forward-full.html` 提取完整正文。也可以直接传入这份全文，或传入仍含该节的历史单文件文章。生成 HTML 使用 Python 3，截取预览需要 Playwright、Chromium 和支持中文的字体。
 
