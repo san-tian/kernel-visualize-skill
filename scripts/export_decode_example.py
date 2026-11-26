@@ -281,6 +281,42 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows,
             raise ValueError(f"missing Input, pseudocode, Output, CTA or communication at {where}")
 
 
+def check_stage_reading_order(stage, phase, calls, collapsed):
+    """A reader can follow the forward path with the explanatory panels closed."""
+    bodies = with_class(stage, "stage-body")
+    if len(bodies) != 1:
+        raise ValueError(f"expected one stage body at {phase}")
+    body = list(bodies[0])
+    execution = with_class(body, "stage-execution")
+    support = with_class(body, "stage-support")
+    if (len(execution) != 1 or len(support) != 1 or support[0].tag != "aside"
+            or body.index(execution[0]) >= body.index(support[0])
+            or execution[0] in collapsed or support[0] in collapsed):
+        raise ValueError(f"expected an execution path followed by its own visible explanation at {phase}")
+
+    headings = []
+    for zone, role in ((execution[0], "section-exec-heading"), (support[0], "support-heading")):
+        labels = with_class(zone, role)
+        if len(labels) != 1 or labels[0] in collapsed:
+            raise ValueError(f"expected a visible {role} at {phase}")
+        headings.append("".join(labels[0].itertext()).strip())
+    if not all(headings) or headings[0] == headings[1]:
+        raise ValueError(f"give the execution path and its explanation distinct headings at {phase}")
+
+    path = set(execution[0].iter())
+    if not with_class(path, "stage-brief") or not with_class(support[0].iter(), "stage-transfers"):
+        raise ValueError(f"put the stage summary on the execution path and its tensor map in the explanation at {phase}")
+    nested = {child for call in calls for members in with_class(call, "kernel-members")
+              for child in members.iter("details")}
+    for call in calls:
+        if call not in path or (call in collapsed and call not in nested):
+            raise ValueError(f"source call hidden outside its parent invocation or off the execution path at {phase}")
+        summary = call.find("summary")
+        if (summary is None or not any((name.text or "").strip() for name in summary.iter("code"))
+                or not any("".join(label.itertext()).strip() for label in with_class(summary, "call-detail-label"))):
+            raise ValueError(f"expected a named source call with its own details label at {phase}")
+
+
 def check_section(section):
     ids = [el.get("id") for el in section.iter() if "id" in el.attrib]
     if len(ids) != len(set(ids)):
@@ -306,7 +342,10 @@ def check_section(section):
                 for child in panel:
                     if child.tag != "summary":
                         collapsed.update(child.iter())
-    if "kernel-transfer-map" in classes:
+    ordered = "stage-reading-order" in classes
+    if ordered and not continuous:
+        raise ValueError("the forward timeline must keep all stage headings visible")
+    if "kernel-transfer-map" in classes or ordered:
         for node in section.iter():
             if "hidden" in node.attrib:
                 collapsed.update(node.iter())
@@ -347,6 +386,8 @@ def check_section(section):
                  and (el.find("dl") is not None or not {"kernel-chain", "call-group"} & set(el.get("class", "").split()))]
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
+        if ordered:
+            check_stage_reading_order(stage, phase, calls, collapsed)
         for call in calls:
             check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template,
                               "kernel-input-examples" in classes, has_call_kinds, execution_format,
