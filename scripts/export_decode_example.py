@@ -35,13 +35,14 @@ class ArticleParser(HTMLParser):
         self.sections = []
         self.start = self.end = None
         self.in_head = False
+        self.full_source = None
         self.in_noscript = False
         self.raw = None
         self.styles = []
         self.scripts = []
         self.feed(source)
         self.close()
-        if self.end is None:
+        if self.end is None and self.full_source is None:
             raise ValueError("missing or incomplete section containing #decode-comparison")
 
     def source_offset(self):
@@ -54,6 +55,14 @@ class ArticleParser(HTMLParser):
             self.in_head = True
         elif tag == "noscript":
             self.in_noscript = True
+        elif (tag == "meta" and self.in_head and not self.in_noscript
+              and values.get("name") == "article-full-source"):
+            if self.full_source is not None:
+                raise ValueError("duplicate article-full-source marker")
+            filename = values.get("content") or ""
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.html", filename):
+                raise ValueError("article-full-source must name an HTML file in the same directory")
+            self.full_source = filename
         elif tag == "section":
             self.sections.append(self.source_offset())
         if values.get("id") == "decode-comparison":
@@ -412,8 +421,11 @@ def comparison_styles(styles, section, ids):
     return "\n".join(line.rstrip() for line in css.splitlines())
 
 
-def export(source):
-    article = ArticleParser(source)
+def export(source, article=None):
+    if article is None:
+        article = ArticleParser(source)
+    if article.full_source is not None:
+        raise ValueError("expected the complete article; use the lightweight entry as a command-line input")
     section = SectionParser(source[article.start:article.end] + "</section>").section
     heading = section.find(".//h2[@id='decode-comparison']")
     if heading is None:
@@ -469,9 +481,27 @@ def preview(html_path, png_path):
     png_path.write_bytes(image)
 
 
+def read_article(path):
+    """Read a historical self-contained article or a lightweight entry and its sibling."""
+    source = path.read_text(encoding="utf-8")
+    article = ArticleParser(source)
+    if article.full_source is None:
+        return source, article, path
+    full = path.parent / article.full_source
+    if full.is_symlink() or not full.is_file():
+        raise ValueError(f"missing regular sibling file for article-full-source: {article.full_source}")
+    if full == path:
+        raise ValueError("article-full-source points back to the entry")
+    source = full.read_text(encoding="utf-8")
+    article = ArticleParser(source)
+    if article.full_source is not None:
+        raise ValueError("article-full-source must point directly to the complete article")
+    return source, article, full
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="original complete article HTML")
+    parser.add_argument("input", type=Path, help="lightweight article entry or complete article HTML")
     parser.add_argument("output", type=Path, help="standalone comparison HTML")
     parser.add_argument("--preview", type=Path, metavar="PNG", help="also capture the Q/KV stage with Chromium")
     args = parser.parse_args()
@@ -479,7 +509,10 @@ def main():
     if len(set(paths)) != len(paths):
         parser.error("input, HTML output and PNG output must be different paths")
     try:
-        document = export(args.input.read_text(encoding="utf-8"))
+        source, article, full = read_article(paths[0])
+        if full in paths[1:]:
+            parser.error("the complete article cannot be used as an output path")
+        document = export(source, article)
         args.output.write_bytes(document.encode("utf-8"))
         if args.preview:
             preview(args.output, args.preview)
