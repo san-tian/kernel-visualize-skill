@@ -57,6 +57,20 @@ def _size_note(size: str) -> str:
 
 
 InputRows = Sequence[Tuple[str, str, str]]
+ExecutionPath = Tuple[str, str, str, str]
+
+
+def _execution_path(execution: ExecutionPath) -> str:
+    fields = (("api", "调用接口"), ("owner", "执行方"), ("work", "具体工作"), ("evidence", "设备端实现"))
+    if (not isinstance(execution, (tuple, list)) or len(execution) != len(fields)
+            or any(not isinstance(value, str) or not value.strip() for value in execution)):
+        raise ValueError("An execution path needs an API, executor, operation and device evidence")
+    rows = "".join(
+        f'<div class="execution-{key}"><span class="execution-label">{label}</span> '
+        f'<span class="execution-value">{physical_text(value.strip())}</span></div>'
+        for (key, label), value in zip(fields, execution)
+    )
+    return f'<div class="call-execution">{rows}</div>'
 
 
 def _input_rows(rows: InputRows, size: str) -> str:
@@ -94,6 +108,7 @@ def render_card_body(
     *,
     kind: Optional[Tuple[str, str]] = None,
     backend: Optional[Tuple[str, str]] = None,
+    execution: Optional[ExecutionPath] = None,
     input_note: str = "",
     output_note: str = "",
     input_size: str = "",
@@ -109,8 +124,10 @@ def render_card_body(
     a concrete launch, or another execution level. Use kind_badge(kind_id)
     in the caller's heading to show the type before the reader opens the card.
 
-    backend=(name, implementation) places the verified execution path above
-    the pseudocode. When only the framework entry is known, say so here.
+    execution=(api, executor, work, device_evidence) describes a source call
+    independently from the implementation that handles it. State the actual
+    device kernel or copy mechanism only when the evidence identifies it.
+    Older callers may supply the two-field backend description instead.
 
     grid describes the unit of work or known dispatch boundary. traffic describes
     memory access, host copies and collectives as applicable. Size lines can state
@@ -141,7 +158,11 @@ def render_card_body(
 
     code = escape(program.strip("\r\n"))
     program_html = f'<pre class="kernel-pseudocode"><code>{code}</code></pre>'
-    if backend is not None:
+    if execution is not None:
+        if backend is not None:
+            raise ValueError("Provide either execution or the legacy backend description")
+        program_html = _execution_path(execution) + program_html
+    elif backend is not None:
         backend_name, implementation = backend
         if not backend_name.strip() or not implementation.strip():
             raise ValueError("A backend needs both its name and its implementation path")

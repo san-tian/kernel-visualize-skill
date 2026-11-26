@@ -122,3 +122,12 @@ dl.kernel-card {
 
 .kernel-card .call-backend { margin: .12rem 0 .42rem; font-size: .86rem; line-height: 1.5; }
 .kernel-card .call-backend .backend-name { display: block; font-weight: 650; color: #254d3d; }
+
+.kernel-card .call-execution { margin: .16rem 0 .55rem; font-size: .86rem; line-height: 1.5; }
+.kernel-card .call-execution > div {
+  display: flex; flex-wrap: wrap; align-items: baseline; column-gap: .54rem;
+  padding: .28rem 0; border-bottom: 1px solid #e0e8e3;
+}
+.kernel-card .execution-label { flex: 0 0 5.8em; white-space: nowrap; font-weight: 650; color: #365548; }
+.kernel-card .execution-value { flex: 1 1 13em; min-width: 0; overflow-wrap: anywhere; }
+.kernel-card .execution-api .execution-value { font-family: ui-monospace, Consolas, monospace; }

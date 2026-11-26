@@ -157,6 +157,16 @@ def check_backend_fields(element, where):
             raise ValueError(f"missing or ambiguous {role} at {where}")
 
 
+def check_execution_fields(element, where):
+    for role in ("execution-api", "execution-owner", "execution-work", "execution-evidence"):
+        rows = with_class(element, role)
+        if len(rows) != 1:
+            raise ValueError(f"missing or ambiguous {role} at {where}")
+        values = with_class(rows[0].findall("span"), "execution-value")
+        if len(values) != 1 or not "".join(values[0].itertext()).strip():
+            raise ValueError(f"expected a single value for {role} at {where}")
+
+
 def check_stage_backends(stage, phase, collapsed):
     briefs = with_class(stage.iter(), "stage-brief")
     if len(briefs) != 1:
@@ -171,7 +181,7 @@ def check_stage_backends(stage, phase, collapsed):
 
 
 def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows, has_call_kinds,
-                      has_backends):
+                      execution_format):
     summary = call.find("summary")
     name = "".join(summary.itertext()).strip() if summary is not None else ""
     where = f"{phase}: {name or '(unnamed call)'}"
@@ -192,14 +202,20 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows,
             extent = field.find(".//div[@class='tensor-size']")
             if extent is None or not "".join(extent.itertext()).strip():
                 raise ValueError(f"missing Decode input or output size at {where}")
-    if has_backends:
-        entries = with_class(fields[1], "call-backend")
-        children = list(fields[1])
-        program = fields[1].find("pre[@class='kernel-pseudocode']")
+    if execution_format:
+        program_field = fields[1]
+        entries = with_class(program_field, execution_format)
+        children = list(program_field)
+        program = program_field.find("pre[@class='kernel-pseudocode']")
         if (len(entries) != 1 or program is None
                 or children.index(entries[0]) + 1 != children.index(program)):
-            raise ValueError(f"expected backend immediately before pseudocode at {where}")
-        check_backend_fields(entries[0], where)
+            raise ValueError(f"expected {execution_format} immediately before pseudocode at {where}")
+        if execution_format == "call-execution":
+            if with_class(program_field.iter(), "call-backend"):
+                raise ValueError(f"obsolete backend label beside execution details at {where}")
+            check_execution_fields(entries[0], where)
+        else:
+            check_backend_fields(entries[0], where)
     if has_call_kinds:
         check_call_kind(call, summary, fields[3], where)
     if has_input_rows:
@@ -235,8 +251,12 @@ def check_section(section):
     continuous = all(el.tag == "div" and "decode-stage" in el.get("class", "").split() for el in stages)
     classes = {name for el in section.iter() for name in el.get("class", "").split()}
     has_call_kinds = "kernel-call-kinds" in classes
-    has_backends = "kernel-backends" in classes
-    uses_template = has_backends or has_call_kinds or bool({"kernel-card-template", "kernel-card"} & classes)
+    execution_format = ""
+    if "kernel-execution-paths" in classes:
+        execution_format = "call-execution"
+    elif "kernel-backends" in classes:
+        execution_format = "call-backend"
+    uses_template = bool(execution_format) or has_call_kinds or bool({"kernel-card-template", "kernel-card"} & classes)
     collapsed = set()
     if continuous:
         for panel in section.iter("details"):
@@ -249,7 +269,7 @@ def check_section(section):
         if opened != ["qkv"] or any(el.get("name") != "decode-stage" for el in stages):
             raise ValueError("expected a single open Q/KV panel in the named stage group")
     for phase, stage in zip(STAGES, stages):
-        if has_backends:
+        if execution_format:
             check_stage_backends(stage, phase, collapsed)
         if continuous:
             briefs = [el for el in stage.iter() if "stage-brief" in el.get("class", "").split()]
@@ -281,7 +301,7 @@ def check_section(section):
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         for call in calls:
             check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template,
-                              "kernel-input-examples" in classes, has_call_kinds, has_backends)
+                              "kernel-input-examples" in classes, has_call_kinds, execution_format)
     return ids
 
 
