@@ -20,7 +20,7 @@ TAGS = set("""
 """.split())
 ATTRS = set("""
     aria-hidden aria-label aria-labelledby aria-live aria-pressed class colspan
-    data-change data-memory-routes data-call-details data-gpu-card data-kernel-role data-label data-pair-side
+    data-change data-memory-routes data-call-io data-call-details data-gpu-card data-kernel-role data-label data-pair-side
     data-page data-phase data-row data-slot-cell data-slot-controls data-slot-frame
     data-slot-message data-slot-route data-slot-saved-bytes data-slot-writes
     data-step hidden id name open role scope start type value
@@ -287,7 +287,7 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows,
 
 
 def check_implementation_details(call, route, where):
-    """The adjacent diagram owns traffic accounting; the disclosure explains the implementation."""
+    """Traffic accounting stays visible; the disclosure explains the implementation."""
     bodies = call.findall("dl")
     if len(bodies) != 1 or not {"kernel-card", "paired-detail"} <= set(bodies[0].get("class", "").split()):
         raise ValueError(f"expected one implementation detail card at {where}")
@@ -304,7 +304,7 @@ def check_implementation_details(call, route, where):
                 or not all("".join(child.itertext()).strip() for child in row)):
             raise ValueError(f"missing {role} in implementation details at {where}")
         fields.append(row.find("dd"))
-    repeated_sections = {"kernel-memory-route", "execution-work", "output-path", "input-extent",
+    repeated_sections = {"kernel-memory-route", "kernel-io", "execution-work", "output-path", "input-extent",
                          "card-output", "card-traffic", "tensor-size"}
     if any(repeated_sections.intersection(el.get("class", "").split()) for el in body.iter()):
         raise ValueError(f"implementation details repeat the diagram's work or traffic ledger at {where}")
@@ -327,6 +327,101 @@ def check_implementation_details(call, route, where):
         visible_facts = {compact(dd) for dd in route.iter("dd")}
         if compact(fields[3]) in visible_facts:
             raise ValueError(f"derivation repeats a data flow field verbatim at {where}")
+
+
+LINK_KINDS = {"memory-link-" + kind for kind in ("local", "host", "peer", "conditional", "unknown")}
+
+
+def check_link_kind(link, where):
+    kinds = {c for c in link.get("class", "").split() if c.startswith("memory-link-")}
+    if len(kinds) != 1 or not kinds <= LINK_KINDS:
+        raise ValueError(f"expected one known link classification at {where}")
+
+
+def check_integrated_calls(stage, phase, calls, collapsed):
+    """Each call owns a visible Input and Output, even when nested inside a composite."""
+    def only(nodes, role):
+        matches = with_class(nodes, role)
+        if len(matches) != 1:
+            raise ValueError(f"expected one {role} at {where}")
+        return matches[0]
+
+    def content(el):
+        return "".join(el.itertext()).strip()
+
+    parents = {child: parent for parent in stage.iter() for child in parent}
+    steps = set(with_class(stage.iter(), "kernel-step"))
+    unclaimed_io = set(with_class(stage.iter(), "kernel-io"))
+    fact_classes = {"memory-" + key for key in ("read", "write", "consumer", "handoff", "onchip", "link", "evidence")}
+    unclaimed_facts = {el for el in stage.iter() if fact_classes.intersection(el.get("class", "").split())}
+    for call in calls:
+        where = phase
+        step = parents[call]
+        if step not in steps:
+            raise ValueError(f"expected one enclosing template per call at {where}")
+        steps.remove(step)
+        heading = only(step, "kernel-step-heading")
+        io = only(step, "kernel-io")
+        unclaimed_io.remove(io)
+        if list(step) != [heading, io, call]:
+            raise ValueError(f"expected heading, I/O and details in one template at {where}")
+        summary = call.find("summary")
+        names = heading.findall("code")
+        if (summary is None or len(names) != 1 or not content(names[0])
+                or [content(el) for el in summary.findall("code")] != [content(names[0])]):
+            raise ValueError(f"visible call and implementation names differ at {where}")
+        where = f"{phase}: {content(names[0])}"
+        badge = only(heading, "entry-kind")
+        detail_badge = only(summary, "entry-kind")
+        if set(badge.get("class").split()) != set(detail_badge.get("class").split()) or content(badge) != content(detail_badge):
+            raise ValueError(f"visible call and implementation types differ at {where}")
+
+        # The outer details of a composite can hide the whole child. Opening that
+        # parent must reveal all of the child's I/O without opening the child itself.
+        if (io in collapsed) != (call in collapsed):
+            raise ValueError(f"input/output must be visible alongside its call at {where}")
+        if any(el.tag == "details" or "hidden" in el.attrib or el.get("aria-hidden") == "true" for el in io.iter()):
+            raise ValueError(f"hidden data inside call input/output at {where}")
+        ancestor = step
+        while ancestor is not stage:
+            if "hidden" in ancestor.attrib or ancestor.get("aria-hidden") == "true":
+                raise ValueError(f"hidden call template at {where}")
+            ancestor = parents[ancestor]
+
+        input_box = only(io, "card-input-route")
+        output_box = only(io, "card-output-route")
+        evidence = only(io, "memory-evidence")
+        if list(io) != [input_box, output_box, evidence] or not content(evidence):
+            raise ValueError(f"expected Input, Output and one byte accounting basis at {where}")
+        unclaimed_facts.remove(evidence)
+        links = []
+        for box, label, fields in ((input_box, "Input", ("read", "onchip")),
+                                   (output_box, "Output", ("write", "consumer", "handoff"))):
+            title = only(box, "io-heading")
+            lists = box.findall("dl")
+            if not content(title).startswith(label) or len(lists) != 1 or list(box) != [title, lists[0]]:
+                raise ValueError(f"expected a labeled {label} with its own fields at {where}")
+            rows = lists[0]
+            required = {only(rows, "memory-" + field) for field in fields}
+            here = with_class(rows, "memory-link")
+            if len(here) > 1 or len(rows) != len(fields) + len(here) or set(rows) != required.union(here):
+                raise ValueError(f"duplicated or misplaced {label} fields at {where}")
+            unclaimed_facts.difference_update(rows)
+            for row in rows:
+                if len(fact_classes.intersection(row.get("class", "").split())) != 1:
+                    raise ValueError(f"ambiguous input/output role at {where}")
+                if [el.tag for el in row] != ["dt", "dd"] or not all(content(el) for el in row):
+                    raise ValueError(f"empty input/output fact at {where}")
+            links.extend(here)
+        if not links:
+            raise ValueError(f"missing call communication classification at {where}")
+        if len(links) == 2 and content(links[0].find("dd")) == content(links[1].find("dd")):
+            raise ValueError(f"repeat of the same transfer in both Input and Output at {where}")
+        for link in links:
+            check_link_kind(link, where)
+        check_implementation_details(call, io, where)
+    if steps or unclaimed_io or unclaimed_facts:
+        raise ValueError(f"call template or I/O fields without a matching invocation at {phase}")
 
 
 def check_call_routes(stage, phase, calls, collapsed, *, implementation_details=False):
@@ -358,10 +453,7 @@ def check_call_routes(stage, phase, calls, collapsed, *, implementation_details=
             if len(values) != 1 or not "".join(values[0].itertext()).strip():
                 raise ValueError(f"missing or ambiguous {field} in the diagram at {where}")
         link = with_class(route.iter(), "memory-link")[0]
-        kinds = {c for c in link.get("class", "").split() if c.startswith("memory-link-")}
-        if len(kinds) != 1 or next(iter(kinds)) not in {
-                "memory-link-local", "memory-link-host", "memory-link-peer", "memory-link-conditional", "memory-link-unknown"}:
-            raise ValueError(f"expected a single link classification at {where}")
+        check_link_kind(link, where)
         labels = with_class(route.iter(), "memory-evidence")
         if len(labels) != 1 or not "".join(labels[0].itertext()).strip():
             raise ValueError(f"missing byte accounting basis in the diagram at {where}")
@@ -434,7 +526,16 @@ def check_section(section):
                         collapsed.update(child.iter())
     per_call_routes = any(node.get("data-memory-routes") == "per-call" for node in section.iter())
     implementation_details = any(node.get("data-call-details") == "implementation" for node in section.iter())
-    if implementation_details and not per_call_routes:
+    integrated = any(node.get("data-call-io") == "integrated" for node in section.iter())
+    if "card-input-route" in classes and not integrated:
+        raise ValueError("integrated call I/O requires its format marker")
+    if integrated:
+        if not implementation_details or per_call_routes or "kernel-memory-route" in classes:
+            raise ValueError("integrated cards require implementation details and no separate per-call diagrams")
+        stage_nodes = {el for stage in stages for el in stage.iter()}
+        if any(el not in stage_nodes for el in with_class(section.iter(), "kernel-io")):
+            raise ValueError("input/output template without an owning stage")
+    if implementation_details and not (per_call_routes or integrated):
         raise ValueError("implementation-only details require a visible data flow diagram for every call")
     ordered = "stage-reading-order" in classes
     if ordered and not continuous:
@@ -480,7 +581,9 @@ def check_section(section):
                  and (el.find("dl") is not None or not {"kernel-chain", "call-group"} & set(el.get("class", "").split()))]
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
-        if per_call_routes:
+        if integrated:
+            check_integrated_calls(stage, phase, calls, collapsed)
+        elif per_call_routes:
             check_call_routes(stage, phase, calls, collapsed, implementation_details=implementation_details)
         if ordered:
             check_stage_reading_order(stage, phase, calls, collapsed)
@@ -554,6 +657,8 @@ def comparison_styles(styles, section, ids):
         raise ValueError("missing theme or comparison styles")
     if "kernel-card" in classes and not re.search(r"\.kernel-card(?![\w-])", css):
         raise ValueError("missing shared kernel card styles")
+    if "card-input-route" in classes and ".kernel-io" not in css:
+        raise ValueError("missing integrated call I/O styles")
     if "kernel-memory-route" in classes and ".kernel-memory-route" not in css:
         raise ValueError("missing per-call memory diagram styles")
     if re.search(r"@import|url\s*\(|</style", css, re.I):
@@ -616,7 +721,7 @@ def preview(html_path, png_path):
             stage = page.locator("#compare-qkv .stage-comparison")
         if not stage.count():
             stage = page.locator('.overview-stage[data-phase="qkv"]')
-        if stage.locator(".kernel-memory-route").count():
+        if stage.locator(".kernel-io > .card-input-route, .kernel-memory-route").count():
             # Crop both comparison columns to the current shrink/expand pair.
             # The old sequence continues below it and remains intact in the HTML.
             table = stage.locator(".stage-comparison")

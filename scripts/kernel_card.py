@@ -2,7 +2,8 @@
 
 Input rows contain plain-text (variable and meaning, example value, reason) triples. The caller supplies the kernel name and decides
 whether to display the body immediately or place it inside a details element.
-Use assets/kernel-card.css for card bodies and assets/kernel-memory-route.css for visible memory routes.
+render_call_template groups a call’s inputs, outputs and optional implementation
+details. Use assets/kernel-card.css and assets/kernel-memory-route.css together.
 """
 from html import escape
 import re
@@ -63,31 +64,93 @@ ExecutionPath = Tuple[str, str, str, str]
 OutputPath = Tuple[str, str, str]
 
 
-def render_memory_route(read: str, write: str, consumer: str, handoff: str, link: str, onchip: str, *,
-                        evidence: str = "源码逻辑量 · HBM 和链路流量未实测",
-                        call_name: str = "", link_kind: Optional[str] = None) -> str:
-    """Draw the visible data path for one call. All supplied values are plain text."""
-    def field(key: str, label: str, value: str, modifier: str = "") -> str:
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"Memory route requires a nonempty {key}")
-        return (f'<div class="memory-{key}{modifier}"><dt>{label}</dt>'
-                f'<dd>{physical_text(value.strip())}</dd></div>')
+MemoryIO = Tuple[str, str, str, str, str, str]
+_LOGICAL_VOLUME = "源码逻辑量 · HBM 和链路流量未实测"
+_LINK_LABELS = {None: "卡间通信", "local": "本卡内", "host": "主机 ↔ GPU",
+                "peer": "跨卡执行点", "conditional": "条件跨卡", "unknown": "通信待核"}
 
+
+def _memory_field(key: str, label: str, value: str, modifier: str = "") -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Memory route requires a nonempty {key}")
+    return (f'<div class="memory-{key}{modifier}"><dt>{label}</dt>'
+            f'<dd>{physical_text(value.strip())}</dd></div>')
+
+
+def _memory_link(link_kind: Optional[str], link: str) -> str:
+    if link_kind not in _LINK_LABELS:
+        raise ValueError(f"Unknown memory route link kind: {link_kind!r}")
+    modifier = f" memory-link-{link_kind}" if link_kind else ""
+    return _memory_field("link", _LINK_LABELS[link_kind], link, modifier)
+
+
+def _memory_evidence(evidence: str) -> str:
     if not isinstance(evidence, str) or not evidence.strip():
         raise ValueError("Memory route requires its accounting basis")
-    link_labels = {None: "卡间通信", "local": "本卡内", "host": "主机 ↔ GPU",
-                   "peer": "跨卡执行点", "conditional": "条件跨卡", "unknown": "通信待核"}
-    if link_kind not in link_labels:
-        raise ValueError(f"Unknown memory route link kind: {link_kind!r}")
-    endpoints = (field("read", "从哪读", read) + field("write", "往哪写", write)
-                 + field("consumer", "下一读方", consumer))
-    modifier = f" memory-link-{link_kind}" if link_kind else ""
-    edges = (field("handoff", "交接搬运", handoff) + field("link", link_labels[link_kind], link, modifier)
-             + field("onchip", "片上暂存", onchip))
+    return f'<small class="memory-evidence">{physical_text(evidence.strip())}</small>'
+
+
+def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
+                         link_kind: str, anchor: str = "", children: str = "",
+                         evidence: str = _LOGICAL_VOLUME, link_side: Optional[str] = None,
+                         input_link: Optional[str] = None) -> str:
+    """Render the visible Input and Output of one call above its optional implementation details.
+
+    io holds plain text for (read, write, consumer, handoff, link, onchip). Name,
+    anchor (a bare ID) and evidence are plain text too. Supply trusted rendered
+    HTML for body (render_card_body with paired_route=True) and, optionally,
+    children (the kernel-members element for a composite invocation).
+
+    link_side assigns the link to "input" or "output". Single host transfers
+    default to input (upload into the call), all others default to output.
+    Override this for a download or an inbound peer operation. For a call with
+    both a receive and a send, use input_link for the receive, io[4] for the send.
+    """
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("A call template requires its source call name")
+    if not isinstance(io, (tuple, list)) or len(io) != 6:
+        raise ValueError("A call template needs read, write, consumer, handoff, link and onchip")
+    read, write, consumer, handoff, link, onchip = io
+    input_rows = _memory_field("read", "读取", read) + _memory_field("onchip", "片上暂存", onchip)
+    output_rows = (_memory_field("write", "写入", write) + _memory_field("consumer", "下一读方", consumer)
+                   + _memory_field("handoff", "交接搬运", handoff))
+    if link_side not in (None, "input", "output"):
+        raise ValueError("link_side must be input or output")
+    if input_link is not None:
+        if link_side == "input":
+            raise ValueError("input_link describes the receive and io[4] must describe the send")
+        input_rows += _memory_link(link_kind, input_link)
+        output_rows += _memory_link(link_kind, link)
+    elif link_side == "input" or (link_side is None and link_kind == "host"):
+        input_rows += _memory_link(link_kind, link)
+    else:
+        output_rows += _memory_link(link_kind, link)
+    title = f'<code>{escape(name.strip())}</code>'
+    kind = kind_badge(kind_id)
+    details_id = f' id="{escape(anchor, quote=True)}"' if anchor else ""
+    purpose = escape(f"{name.strip()} · 调用详情", quote=True)
+    return (f'<div class="kernel-step"><div class="kernel-step-heading">{title}{kind}</div>'
+            '<div class="kernel-io"><div class="card-input-route">'
+            f'<b class="io-heading">Input · 从哪读</b><dl>{input_rows}</dl></div>'
+            '<div class="card-output-route">'
+            f'<b class="io-heading">Output · 写给谁</b><dl>{output_rows}</dl></div>'
+            f'{_memory_evidence(evidence)}</div><details class="kernel-drill"{details_id}>'
+            f'<summary aria-label="{purpose}">{kind}{title}'
+            f'<span class="call-detail-label">调用详情</span></summary>{body}{children}</details></div>')
+
+
+def render_memory_route(read: str, write: str, consumer: str, handoff: str, link: str, onchip: str, *,
+                        evidence: str = _LOGICAL_VOLUME,
+                        call_name: str = "", link_kind: Optional[str] = None) -> str:
+    """Draw a standalone data path for older callers. All supplied values are plain text."""
+    endpoints = (_memory_field("read", "从哪读", read) + _memory_field("write", "往哪写", write)
+                 + _memory_field("consumer", "下一读方", consumer))
+    edges = (_memory_field("handoff", "交接搬运", handoff) + _memory_link(link_kind, link)
+             + _memory_field("onchip", "片上暂存", onchip))
     label = escape(f"{call_name} 的数据流" if call_name else "调用数据流")
     return (f'<div class="kernel-memory-route" role="group" aria-label="{label}">'
             f'<dl class="memory-endpoints">{endpoints}</dl><dl class="memory-edges">{edges}</dl>'
-            f'<small class="memory-evidence">{physical_text(evidence.strip())}</small></div>')
+            f'{_memory_evidence(evidence)}</div>')
 
 
 def render_transfer_path(record: Mapping[str, str]) -> str:
@@ -201,9 +264,9 @@ def render_card_body(
     memory access, host copies and collectives as applicable. Size lines can state
     separate scopes, such as one CTA versus a complete launch.
 
-    Set paired_route=True when the caller shows render_memory_route beside the
-    disclosure. Its diagram already supplies the output, byte counts, handoff
-    and communication. The disclosure adds pseudocode, implementation evidence,
+    Set paired_route=True for the detail body in render_call_template, or when
+    embedding an older standalone route. The visible Input and Output already
+    supply the output, byte counts, handoff and communication. The disclosure adds pseudocode, implementation evidence,
     CTA layout and worked input coordinates. Use derivation only for an
     additional calculation whose operands or assumptions merit explanation.
     """
