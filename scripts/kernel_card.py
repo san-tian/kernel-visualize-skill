@@ -90,11 +90,43 @@ def _memory_evidence(evidence: str) -> str:
     return f'<small class="memory-evidence">{physical_text(evidence.strip())}</small>'
 
 
+_SCOPE_HEADINGS = {
+    "single": "一次 GPU kernel 发射",
+    "continuation": "同一次 GPU kernel 发射 · 续段（新增 0 次）",
+    "multiple": "多次 GPU 发射 · 组合流程",
+    "conditional": "按运行条件选择执行路径",
+    "view": "张量视图 · 仅更新元数据",
+    "host": "主机端执行",
+}
+
+
+def _execution_scope(scope: str, kind_id: str, onchip: str, work: str,
+                     note: str, details: str) -> str:
+    if scope == "opaque":
+        title = f"{KIND_LABELS[kind_id]} · 发射次数待确认"
+    elif scope in _SCOPE_HEADINGS:
+        title = _SCOPE_HEADINGS[scope]
+    else:
+        raise ValueError(f"Unknown launch scope: {scope!r}")
+    hardware = scope in ("single", "continuation")
+    section = "kernel-execution-boundary" if hardware else "call-implementation-scope"
+    device_label = "片上暂存" if scope not in ("view", "host") else "设备访问"
+    rows = []
+    if work.strip():
+        rows.append(f'<div class="scope-work"><dt>执行内容</dt><dd>{physical_text(work.strip())}</dd></div>')
+    rows.append(_memory_field("onchip", device_label, onchip))
+    if note.strip():
+        rows.append(f'<div class="scope-note"><dt>范围说明</dt><dd>{physical_text(note.strip())}</dd></div>')
+    return (f'<div class="{section}" data-launch-scope="{scope}">'
+            f'<b class="scope-heading">{title}</b><dl>{"".join(rows)}</dl>{details}</div>')
+
+
 def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
                          link_kind: str, anchor: str = "", children: str = "",
                          evidence: str = _LOGICAL_VOLUME, link_side: Optional[str] = None,
-                         input_link: Optional[str] = None) -> str:
-    """Render the visible Input and Output of one call above its optional implementation details.
+                         input_link: Optional[str] = None, launch_scope: Optional[str] = None,
+                         work: str = "", boundary_note: str = "") -> str:
+    """Render Input, the implementation and its disclosure, then Output for one call.
 
     io holds plain text for (read, write, consumer, handoff, link, onchip). Name,
     anchor (a bare ID) and evidence are plain text too. Supply trusted rendered
@@ -105,13 +137,22 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
     default to input (upload into the call), all others default to output.
     Override this for a download or an inbound peer operation. For a call with
     both a receive and a send, use input_link for the receive, io[4] for the send.
+
+    Between Input and Output, launch_scope="single" marks one evidenced launch.
+    Use "continuation" for a later part of that same launch. Use "multiple",
+    "conditional", "view", "host", or "opaque" for other implementation scopes.
+    Omitting launch_scope preserves the earlier I/O and disclosure layout.
+    Within an explicit scope, work describes the computation. boundary_note
+    states its conditions or names the launch counted earlier for a continuation.
     """
     if not isinstance(name, str) or not name.strip():
         raise ValueError("A call template requires its source call name")
     if not isinstance(io, (tuple, list)) or len(io) != 6:
         raise ValueError("A call template needs read, write, consumer, handoff, link and onchip")
     read, write, consumer, handoff, link, onchip = io
-    input_rows = _memory_field("read", "读取", read) + _memory_field("onchip", "片上暂存", onchip)
+    input_rows = _memory_field("read", "读取", read)
+    if launch_scope is None:
+        input_rows += _memory_field("onchip", "片上暂存", onchip)
     output_rows = (_memory_field("write", "写入", write) + _memory_field("consumer", "下一读方", consumer)
                    + _memory_field("handoff", "交接搬运", handoff))
     if link_side not in (None, "input", "output"):
@@ -129,14 +170,21 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
     kind = kind_badge(kind_id)
     details_id = f' id="{escape(anchor, quote=True)}"' if anchor else ""
     purpose = escape(f"{name.strip()} · 调用详情", quote=True)
+    details = (f'<details class="kernel-drill"{details_id}><summary aria-label="{purpose}">'
+               f'{kind}{title}<span class="call-detail-label">调用详情</span></summary>'
+               f'{body}{children}</details>')
+    if launch_scope is None:
+        scope_html = ""
+        outer_details = details
+    else:
+        scope_html = _execution_scope(launch_scope, kind_id, onchip, work, boundary_note, details)
+        outer_details = ""
     return (f'<div class="kernel-step"><div class="kernel-step-heading">{title}{kind}</div>'
             '<div class="kernel-io"><div class="card-input-route">'
-            f'<b class="io-heading">Input · 从哪读</b><dl>{input_rows}</dl></div>'
+            f'<b class="io-heading">Input · 从哪读</b><dl>{input_rows}</dl></div>{scope_html}'
             '<div class="card-output-route">'
             f'<b class="io-heading">Output · 写给谁</b><dl>{output_rows}</dl></div>'
-            f'{_memory_evidence(evidence)}</div><details class="kernel-drill"{details_id}>'
-            f'<summary aria-label="{purpose}">{kind}{title}'
-            f'<span class="call-detail-label">调用详情</span></summary>{body}{children}</details></div>')
+            f'{_memory_evidence(evidence)}</div>{outer_details}</div>')
 
 
 def render_memory_route(read: str, write: str, consumer: str, handoff: str, link: str, onchip: str, *,

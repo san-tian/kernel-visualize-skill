@@ -63,29 +63,48 @@
 .kernel-io .io-heading {
   display: block; margin: 0 0 .12rem; color: #244a38; font-size: .84rem; font-weight: 670;
 }
-.kernel-io dl, .kernel-io dt, .kernel-io dd { margin: 0; padding: 0; border: 0; background: none; }
-.kernel-io dl > div {
+.kernel-io > div > dl, .kernel-io > div > dl > div > dt, .kernel-io > div > dl > div > dd { margin: 0; padding: 0; border: 0; background: none; }
+.kernel-io > div > dl > div {
   display: grid; grid-template-columns: 5.5em minmax(0, 1fr); align-items: baseline;
   gap: .35rem; padding: .05rem 0;
 }
-.kernel-io dt { justify-self: start; color: #4f6559; font: 580 .78rem/1.5 system-ui, sans-serif; }
-.kernel-io dd { min-width: 0; color: inherit; font: inherit; }
+.kernel-io > div > dl > div > dt { justify-self: start; color: #4f6559; font: 580 .78rem/1.5 system-ui, sans-serif; }
+.kernel-io > div > dl > div > dd { min-width: 0; color: inherit; font: inherit; }
 .kernel-io .memory-handoff dd { white-space: pre-line; }
 .kernel-io .memory-link-host dt { color: #624982; }
 .kernel-io .memory-link-peer dt { color: #804b0c; }
 .kernel-io .memory-link-conditional dt { color: #315c82; }
 .kernel-io .memory-evidence { display: block; margin: 0 0 .22rem; font-size: .73rem; color: #506459; }
-.kernel-io + .kernel-drill { margin: 0; }
-.kernel-io + .kernel-drill > summary { width: fit-content; max-width: 100%; cursor: pointer; color: #375e4b; }
-.kernel-io + .kernel-drill > summary > code, .kernel-io + .kernel-drill > summary > .entry-kind { display: none; }
-.kernel-io + .kernel-drill > summary:focus-visible { outline: 2px solid #376851; outline-offset: 2px; }
-.kernel-io + .kernel-drill > .paired-detail {
+.kernel-io + .kernel-drill, .kernel-io > [data-launch-scope] > .kernel-drill { margin: 0; }
+.kernel-io + .kernel-drill > summary, .kernel-io > [data-launch-scope] > .kernel-drill > summary { width: fit-content; max-width: 100%; cursor: pointer; color: #375e4b; }
+.kernel-io + .kernel-drill > summary > code, .kernel-io + .kernel-drill > summary > .entry-kind,
+.kernel-io > [data-launch-scope] > .kernel-drill > summary > code,
+.kernel-io > [data-launch-scope] > .kernel-drill > summary > .entry-kind { display: none; }
+.kernel-io + .kernel-drill > summary:focus-visible, .kernel-io > [data-launch-scope] > .kernel-drill > summary:focus-visible { outline: 2px solid #376851; outline-offset: 2px; }
+.kernel-io + .kernel-drill > .paired-detail, .kernel-io > [data-launch-scope] > .kernel-drill > .paired-detail {
   margin: .3rem 0 0; padding: 0; border: 0; border-top: 1px solid #d7e2db;
   border-radius: 0; box-shadow: none;
 }
 @media (max-width: 650px) {
   .kernel-step { padding: .3rem .35rem .16rem; }
-  .kernel-io dl > div { display: block; padding: .11rem 0; }
-  .kernel-io dt, .kernel-io dd { display: inline; }
-  .kernel-io dt { margin-inline-end: .4em; }
+  .kernel-io > div > dl > div { display: block; padding: .11rem 0; }
+  .kernel-io > div > dl > div > dt, .kernel-io > div > dl > div > dd { display: inline; }
+  .kernel-io > div > dl > div > dt { margin-inline-end: .4em; }
 }
+
+/* Only a documented device launch receives an enclosing hardware boundary. */
+.kernel-io > .kernel-execution-boundary {
+  margin: .1rem 0 .22rem; padding: .34rem .53rem .38rem;
+  border: 2px solid #37745d; border-radius: .28rem; background: #f2f8f4;
+}
+.kernel-io > .kernel-execution-boundary[data-launch-scope="continuation"] {
+  border-style: dashed; background: #f8faf8;
+}
+.kernel-io > .kernel-execution-boundary + .card-output-route { border-top: 0; }
+.kernel-io > .call-implementation-scope {
+  margin: .08rem 0 .17rem; padding: .27rem .5rem; background: #f4f5f3;
+}
+.kernel-io .scope-heading {
+  display: block; margin: 0 0 .1rem; color: #245b44; font-weight: 680; font-size: .84rem;
+}
+.kernel-io .call-implementation-scope > .scope-heading { color: #48554e; }

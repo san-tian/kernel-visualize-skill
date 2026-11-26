@@ -20,7 +20,7 @@ TAGS = set("""
 """.split())
 ATTRS = set("""
     aria-hidden aria-label aria-labelledby aria-live aria-pressed class colspan
-    data-change data-memory-routes data-call-io data-call-details data-gpu-card data-kernel-role data-label data-pair-side
+    data-change data-memory-routes data-call-io data-call-details data-launch-boundaries data-launch-scope data-gpu-card data-kernel-role data-label data-pair-side
     data-page data-phase data-row data-slot-cell data-slot-controls data-slot-frame
     data-slot-message data-slot-route data-slot-saved-bytes data-slot-writes
     data-step hidden id name open role scope start type value
@@ -324,7 +324,8 @@ def check_implementation_details(call, route, where):
         # data-flow field into the optional note gives the reader no explanation.
         def compact(element):
             return "".join("".join(element.itertext()).split())
-        visible_facts = {compact(dd) for dd in route.iter("dd")}
+        detail_nodes = set(call.iter())
+        visible_facts = {compact(dd) for dd in route.iter("dd") if dd not in detail_nodes}
         if compact(fields[3]) in visible_facts:
             raise ValueError(f"derivation repeats a data flow field verbatim at {where}")
 
@@ -338,7 +339,41 @@ def check_link_kind(link, where):
         raise ValueError(f"expected one known link classification at {where}")
 
 
-def check_integrated_calls(stage, phase, calls, collapsed):
+SCOPE_CLASSES = {"kernel-execution-boundary", "call-implementation-scope"}
+# Text that makes the machine-readable scope legible when the card is closed.
+SCOPE_LABELS = {"single": "一次 GPU kernel 发射", "continuation": "续段", "multiple": "多次",
+                "conditional": "运行条件", "opaque": "待确认", "view": "视图", "host": "主机"}
+
+
+def check_execution_scope(scope, call, badge, where):
+    """Only a single evidenced launch or a continuation earns a kernel boundary."""
+    mode = scope.get("data-launch-scope")
+    hardware = mode in {"single", "continuation"}
+    role = "kernel-execution-boundary" if hardware else "call-implementation-scope"
+    if mode not in SCOPE_LABELS or (set(scope.get("class", "").split()) & SCOPE_CLASSES) != {role}:
+        raise ValueError(f"launch scope and boundary style disagree at {where}")
+    if hardware and "kind-view" in badge.get("class", "").split():
+        raise ValueError(f"a metadata view cannot launch a GPU kernel at {where}")
+    labels = with_class(scope, "scope-heading")
+    ledgers = scope.findall("dl")
+    if len(labels) != 1 or len(ledgers) != 1 or list(scope) != [labels[0], ledgers[0], call]:
+        raise ValueError(f"execution scope must contain its label, work and implementation details at {where}")
+    title = "".join(labels[0].itertext()).strip()
+    if SCOPE_LABELS[mode] not in title or (("续段" in title) != (mode == "continuation")):
+        raise ValueError(f"missing or inconsistent execution scope label at {where}")
+    ledger = ledgers[0]
+    fields = ["scope-work", "memory-onchip", "scope-note"]
+    actual = [set(row.get("class", "").split()) & set(fields) for row in ledger]
+    expected = [{role} for role in fields if role == "memory-onchip" or {role} in actual]
+    if (actual != expected or any([el.tag for el in row] != ["dt", "dd"]
+                                  or not all("".join(el.itertext()).strip() for el in row) for row in ledger)):
+        raise ValueError(f"expected one on-chip field and distinct execution facts at {where}")
+    if mode == "continuation" and not with_class(ledger, "scope-note"):
+        raise ValueError(f"explain which launch this continuation belongs to at {where}")
+    return ledger
+
+
+def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False):
     """Each call owns a visible Input and Output, even when nested inside a composite."""
     def only(nodes, role):
         matches = with_class(nodes, role)
@@ -352,18 +387,23 @@ def check_integrated_calls(stage, phase, calls, collapsed):
     parents = {child: parent for parent in stage.iter() for child in parent}
     steps = set(with_class(stage.iter(), "kernel-step"))
     unclaimed_io = set(with_class(stage.iter(), "kernel-io"))
+    unclaimed_scopes = {el for el in stage.iter()
+                        if "data-launch-scope" in el.attrib or SCOPE_CLASSES.intersection(el.get("class", "").split())}
     fact_classes = {"memory-" + key for key in ("read", "write", "consumer", "handoff", "onchip", "link", "evidence")}
+    if explicit:
+        fact_classes.update(("scope-work", "scope-note"))
     unclaimed_facts = {el for el in stage.iter() if fact_classes.intersection(el.get("class", "").split())}
     for call in calls:
         where = phase
-        step = parents[call]
+        scope = parents[call] if explicit else None
+        step = parents.get(parents.get(scope)) if explicit else parents[call]
         if step not in steps:
             raise ValueError(f"expected one enclosing template per call at {where}")
         steps.remove(step)
         heading = only(step, "kernel-step-heading")
         io = only(step, "kernel-io")
         unclaimed_io.remove(io)
-        if list(step) != [heading, io, call]:
+        if list(step) != ([heading, io] if explicit else [heading, io, call]):
             raise ValueError(f"expected heading, I/O and details in one template at {where}")
         summary = call.find("summary")
         names = heading.findall("code")
@@ -380,7 +420,9 @@ def check_integrated_calls(stage, phase, calls, collapsed):
         # parent must reveal all of the child's I/O without opening the child itself.
         if (io in collapsed) != (call in collapsed):
             raise ValueError(f"input/output must be visible alongside its call at {where}")
-        if any(el.tag == "details" or "hidden" in el.attrib or el.get("aria-hidden") == "true" for el in io.iter()):
+        detail_nodes = set(call.iter()) if explicit else set()
+        if any(el.tag == "details" or "hidden" in el.attrib or el.get("aria-hidden") == "true"
+               for el in io.iter() if el not in detail_nodes):
             raise ValueError(f"hidden data inside call input/output at {where}")
         ancestor = step
         while ancestor is not stage:
@@ -391,11 +433,24 @@ def check_integrated_calls(stage, phase, calls, collapsed):
         input_box = only(io, "card-input-route")
         output_box = only(io, "card-output-route")
         evidence = only(io, "memory-evidence")
-        if list(io) != [input_box, output_box, evidence] or not content(evidence):
+        expected_io = [input_box, output_box, evidence]
+        input_fields = ("read", "onchip")
+        if explicit:
+            if scope not in unclaimed_scopes:
+                raise ValueError(f"details must be inside their own execution scope at {where}")
+            unclaimed_scopes.remove(scope)
+            ledger = check_execution_scope(scope, call, badge, where)
+            for row in ledger:
+                if len(fact_classes.intersection(row.get("class", "").split())) != 1:
+                    raise ValueError(f"ambiguous execution field at {where}")
+            unclaimed_facts.difference_update(ledger)
+            expected_io.insert(1, scope)
+            input_fields = ("read",)
+        if list(io) != expected_io or not content(evidence):
             raise ValueError(f"expected Input, Output and one byte accounting basis at {where}")
         unclaimed_facts.remove(evidence)
         links = []
-        for box, label, fields in ((input_box, "Input", ("read", "onchip")),
+        for box, label, fields in ((input_box, "Input", input_fields),
                                    (output_box, "Output", ("write", "consumer", "handoff"))):
             title = only(box, "io-heading")
             lists = box.findall("dl")
@@ -420,7 +475,7 @@ def check_integrated_calls(stage, phase, calls, collapsed):
         for link in links:
             check_link_kind(link, where)
         check_implementation_details(call, io, where)
-    if steps or unclaimed_io or unclaimed_facts:
+    if steps or unclaimed_io or unclaimed_facts or unclaimed_scopes:
         raise ValueError(f"call template or I/O fields without a matching invocation at {phase}")
 
 
@@ -527,14 +582,24 @@ def check_section(section):
     per_call_routes = any(node.get("data-memory-routes") == "per-call" for node in section.iter())
     implementation_details = any(node.get("data-call-details") == "implementation" for node in section.iter())
     integrated = any(node.get("data-call-io") == "integrated" for node in section.iter())
+    markers = [el for el in section.iter() if "data-launch-boundaries" in el.attrib]
+    explicit = bool(markers)
+    has_scope_markup = bool(SCOPE_CLASSES & classes) or any("data-launch-scope" in el.attrib for el in section.iter())
+    if explicit and (len(markers) != 1 or markers[0].get("data-launch-boundaries") != "explicit"
+                     or markers[0].get("data-call-io") != "integrated"):
+        raise ValueError("declare explicit execution scopes on the integrated I/O format marker")
+    if has_scope_markup != explicit:
+        raise ValueError("explicit execution scopes require a launch-boundaries marker")
     if "card-input-route" in classes and not integrated:
         raise ValueError("integrated call I/O requires its format marker")
     if integrated:
         if not implementation_details or per_call_routes or "kernel-memory-route" in classes:
             raise ValueError("integrated cards require implementation details and no separate per-call diagrams")
         stage_nodes = {el for stage in stages for el in stage.iter()}
-        if any(el not in stage_nodes for el in with_class(section.iter(), "kernel-io")):
-            raise ValueError("input/output template without an owning stage")
+        for el in section.iter():
+            if el not in stage_nodes and ("data-launch-scope" in el.attrib or
+                    (SCOPE_CLASSES | {"kernel-io"}).intersection(el.get("class", "").split())):
+                raise ValueError("input/output or execution scope without an owning stage")
     if implementation_details and not (per_call_routes or integrated):
         raise ValueError("implementation-only details require a visible data flow diagram for every call")
     ordered = "stage-reading-order" in classes
@@ -582,7 +647,7 @@ def check_section(section):
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         if integrated:
-            check_integrated_calls(stage, phase, calls, collapsed)
+            check_integrated_calls(stage, phase, calls, collapsed, explicit=explicit)
         elif per_call_routes:
             check_call_routes(stage, phase, calls, collapsed, implementation_details=implementation_details)
         if ordered:
@@ -657,6 +722,8 @@ def comparison_styles(styles, section, ids):
         raise ValueError("missing theme or comparison styles")
     if "kernel-card" in classes and not re.search(r"\.kernel-card(?![\w-])", css):
         raise ValueError("missing shared kernel card styles")
+    if "kernel-execution-boundary" in classes and ".kernel-execution-boundary" not in css:
+        raise ValueError("missing explicit kernel boundary styles")
     if "card-input-route" in classes and ".kernel-io" not in css:
         raise ValueError("missing integrated call I/O styles")
     if "kernel-memory-route" in classes and ".kernel-memory-route" not in css:
@@ -727,7 +794,10 @@ def preview(html_path, png_path):
             table = stage.locator(".stage-comparison")
             header = table.locator(".operation-head")
             current = table.locator('.operation-row [data-pair-side="after"]').last
-            final_call = current.locator("details.kernel-drill").last
+            # The Output follows details inside the explicit-scope design.
+            # Use the enclosing card to keep the write and next reader in the crop.
+            cards = current.locator(".kernel-step")
+            final_call = cards.last if current.locator("[data-launch-scope]").count() else current.locator("details.kernel-drill").last
             top = header.bounding_box()["y"]
             last = final_call.bounding_box()
             height = ceil(last["y"] + last["height"] - top) + 4
