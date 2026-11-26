@@ -20,7 +20,7 @@ TAGS = set("""
 """.split())
 ATTRS = set("""
     aria-hidden aria-label aria-labelledby aria-live aria-pressed class colspan
-    data-change data-memory-routes data-gpu-card data-kernel-role data-label data-pair-side
+    data-change data-memory-routes data-call-details data-gpu-card data-kernel-role data-label data-pair-side
     data-page data-phase data-row data-slot-cell data-slot-controls data-slot-frame
     data-slot-message data-slot-route data-slot-saved-bytes data-slot-writes
     data-step hidden id name open role scope start type value
@@ -167,8 +167,8 @@ def check_backend_fields(element, where):
             raise ValueError(f"missing or ambiguous {role} at {where}")
 
 
-def check_execution_fields(element, where):
-    for role in ("execution-api", "execution-owner", "execution-work", "execution-evidence"):
+def check_execution_fields(element, where, roles=("execution-api", "execution-owner", "execution-work", "execution-evidence")):
+    for role in roles:
         rows = with_class(element, role)
         if len(rows) != 1:
             raise ValueError(f"missing or ambiguous {role} at {where}")
@@ -213,6 +213,17 @@ def check_stage_transfers(stage, phase, collapsed):
             visible_path = True
     if not visible_path:
         raise ValueError(f"expected an initially visible tensor path with write, handoff and link at {phase}")
+
+
+def check_variable_examples(field, where):
+    rows = field.findall("table[@class='input-variables']/tbody/tr")
+    for row in rows:
+        parts = (row.find("th[@scope='row']"), row.find("td/span[@class='variable-example']"),
+                 row.find("td/span[@class='variable-reason']"))
+        if any(part is None or not "".join(part.itertext()).strip() for part in parts):
+            raise ValueError(f"missing variable, example or reason at {where}")
+    if not rows or field.find("code") is not None or field.find("p") is not None:
+        raise ValueError(f"expected a variable table as the Input at {where}")
 
 
 def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows, has_call_kinds,
@@ -262,14 +273,7 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows,
     if has_call_kinds:
         check_call_kind(call, summary, fields[3], where)
     if has_input_rows:
-        rows = fields[0].findall("table[@class='input-variables']/tbody/tr")
-        for row in rows:
-            parts = (row.find("th[@scope='row']"), row.find("td/span[@class='variable-example']"),
-                     row.find("td/span[@class='variable-reason']"))
-            if any(part is None or not "".join(part.itertext()).strip() for part in parts):
-                raise ValueError(f"missing variable, example or reason at {where}")
-        if not rows or fields[0].find("code") is not None or fields[0].find("p") is not None:
-            raise ValueError(f"expected a variable table as the Input at {where}")
+        check_variable_examples(fields[0], where)
     if has_contracts or uses_template:
         labels = [(el.text or "").strip() for el in call.findall("dl/div/dt")]
         signatures = [fields[i].find("code[@class='tensor-signature']") for i in ((2,) if has_input_rows else (0, 2))]
@@ -282,7 +286,50 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows,
             raise ValueError(f"missing Input, pseudocode, Output, CTA or communication at {where}")
 
 
-def check_call_routes(stage, phase, calls, collapsed):
+def check_implementation_details(call, route, where):
+    """The adjacent diagram owns traffic accounting; the disclosure explains the implementation."""
+    bodies = call.findall("dl")
+    if len(bodies) != 1 or not {"kernel-card", "paired-detail"} <= set(bodies[0].get("class", "").split()):
+        raise ValueError(f"expected one implementation detail card at {where}")
+    body = bodies[0]
+    roles = ["card-program", "card-grid", "card-input"]
+    if with_class(body, "card-derivation"):
+        roles.append("card-derivation")
+    if len(body) != len(roles):
+        raise ValueError(f"unexpected implementation sections at {where}")
+    fields = []
+    for row, role in zip(body, roles):
+        if (row.tag != "div" or role not in row.get("class", "").split()
+                or [child.tag for child in row] != ["dt", "dd"]
+                or not all("".join(child.itertext()).strip() for child in row)):
+            raise ValueError(f"missing {role} in implementation details at {where}")
+        fields.append(row.find("dd"))
+    repeated_sections = {"kernel-memory-route", "execution-work", "output-path", "input-extent",
+                         "card-output", "card-traffic", "tensor-size"}
+    if any(repeated_sections.intersection(el.get("class", "").split()) for el in body.iter()):
+        raise ValueError(f"implementation details repeat the diagram's work or traffic ledger at {where}")
+    program, grid, inputs = fields[:3]
+    executor = program.find("div[@class='call-execution']")
+    code = program.find("pre[@class='kernel-pseudocode']")
+    if executor is None or code is None or list(program) != [executor, code]:
+        raise ValueError(f"expected device evidence followed by pseudocode at {where}")
+    check_execution_fields(executor, where, roles=("execution-api", "execution-owner", "execution-evidence"))
+    snippet = code.find("code")
+    if snippet is None or sum(bool(line.strip()) for line in (snippet.text or "").splitlines()) < 2:
+        raise ValueError(f"expected a traceable implementation in the pseudocode at {where}")
+    check_call_kind(call, call.find("summary"), grid, where)
+    check_variable_examples(inputs, where)
+    if len(fields) == 4:
+        # A useful derivation can repeat a symbol or total; copying a whole visible
+        # data-flow field into the optional note gives the reader no explanation.
+        def compact(element):
+            return "".join("".join(element.itertext()).split())
+        visible_facts = {compact(dd) for dd in route.iter("dd")}
+        if compact(fields[3]) in visible_facts:
+            raise ValueError(f"derivation repeats a data flow field verbatim at {where}")
+
+
+def check_call_routes(stage, phase, calls, collapsed, *, implementation_details=False):
     """Each diagram belongs to exactly one call and is visible with that call closed."""
     parents = {child: parent for parent in stage.iter() for child in parent}
     routes = set(with_class(stage.iter(), "kernel-memory-route"))
@@ -318,6 +365,8 @@ def check_call_routes(stage, phase, calls, collapsed):
         labels = with_class(route.iter(), "memory-evidence")
         if len(labels) != 1 or not "".join(labels[0].itertext()).strip():
             raise ValueError(f"missing byte accounting basis in the diagram at {where}")
+        if implementation_details:
+            check_implementation_details(call, route, where)
     if routes:
         raise ValueError(f"data flow diagram without a matching call at {phase}")
 
@@ -384,6 +433,9 @@ def check_section(section):
                     if child.tag != "summary":
                         collapsed.update(child.iter())
     per_call_routes = any(node.get("data-memory-routes") == "per-call" for node in section.iter())
+    implementation_details = any(node.get("data-call-details") == "implementation" for node in section.iter())
+    if implementation_details and not per_call_routes:
+        raise ValueError("implementation-only details require a visible data flow diagram for every call")
     ordered = "stage-reading-order" in classes
     if ordered and not continuous:
         raise ValueError("the forward timeline must keep all stage headings visible")
@@ -429,13 +481,14 @@ def check_section(section):
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         if per_call_routes:
-            check_call_routes(stage, phase, calls, collapsed)
+            check_call_routes(stage, phase, calls, collapsed, implementation_details=implementation_details)
         if ordered:
             check_stage_reading_order(stage, phase, calls, collapsed)
-        for call in calls:
-            check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template,
-                              "kernel-input-examples" in classes, has_call_kinds, execution_format,
-                              has_transfer_map="kernel-transfer-map" in classes)
+        if not implementation_details:
+            for call in calls:
+                check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template,
+                                  "kernel-input-examples" in classes, has_call_kinds, execution_format,
+                                  has_transfer_map="kernel-transfer-map" in classes)
     return ids
 
 

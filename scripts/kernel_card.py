@@ -122,7 +122,7 @@ def _output_path(path: OutputPath) -> str:
     return f'<div class="output-path">{rows}</div>'
 
 
-def _execution_path(execution: ExecutionPath) -> str:
+def _execution_path(execution: ExecutionPath, *, include_work: bool = True) -> str:
     fields = (("api", "调用接口"), ("owner", "执行方"), ("work", "具体工作"), ("evidence", "设备端实现"))
     if (not isinstance(execution, (tuple, list)) or len(execution) != len(fields)
             or any(not isinstance(value, str) or not value.strip() for value in execution)):
@@ -130,7 +130,7 @@ def _execution_path(execution: ExecutionPath) -> str:
     rows = "".join(
         f'<div class="execution-{key}"><span class="execution-label">{label}</span> '
         f'<span class="execution-value">{physical_text(value.strip())}</span></div>'
-        for (key, label), value in zip(fields, execution)
+        for (key, label), value in zip(fields, execution) if include_work or key != "work"
     )
     return f'<div class="call-execution">{rows}</div>'
 
@@ -164,9 +164,9 @@ def _input_rows(rows: InputRows, size: str) -> str:
 def render_card_body(
     inputs: Union[str, InputRows],
     program: str,
-    outputs: str,
-    grid: str,
-    traffic: str,
+    outputs: str = "",
+    grid: str = "",
+    traffic: str = "",
     *,
     kind: Optional[Tuple[str, str]] = None,
     backend: Optional[Tuple[str, str]] = None,
@@ -176,8 +176,10 @@ def render_card_body(
     output_note: str = "",
     input_size: str = "",
     output_size: str = "",
+    paired_route: bool = False,
+    derivation: str = "",
 ) -> str:
-    """Return a self-contained definition list. Signatures may span multiple lines.
+    """Return a definition list for either a standalone card or a visible route. Signatures may span multiple lines.
 
     Pass one row per variable or a group of related indices. Give a traceable
     slice or range for data whose numeric contents are unknown. Existing
@@ -198,20 +200,29 @@ def render_card_body(
     grid describes the unit of work or known dispatch boundary. traffic describes
     memory access, host copies and collectives as applicable. Size lines can state
     separate scopes, such as one CTA versus a complete launch.
+
+    Set paired_route=True when the caller shows render_memory_route beside the
+    disclosure. Its diagram already supplies the output, byte counts, handoff
+    and communication. The disclosure adds pseudocode, implementation evidence,
+    CTA layout and worked input coordinates. Use derivation only for an
+    additional calculation whose operands or assumptions merit explanation.
     """
-    for name, value in (
-        ("program", program), ("outputs", outputs),
-        ("grid", grid), ("traffic", traffic),
-    ):
+    required = [("program", program), ("grid", grid)]
+    if not paired_route:
+        required.extend([("outputs", outputs), ("traffic", traffic)])
+        if derivation.strip():
+            raise ValueError("A separate derivation belongs to a card beside a memory route")
+    for name, value in required:
         if not value.strip():
             raise ValueError(f"Kernel card requires a nonempty {name} field")
 
+    input_extent = "" if paired_route else input_size
     if isinstance(inputs, str):
         if not inputs.strip():
             raise ValueError("Kernel card requires a nonempty inputs field")
-        input_html = _tensor(inputs, input_note, input_size)
+        input_html = _tensor(inputs, input_note, input_extent)
     else:
-        input_html = _input_rows(inputs, input_size)
+        input_html = _input_rows(inputs, input_extent)
 
     grid_html = physical_text(grid.strip())
     kind_class = ""
@@ -227,7 +238,7 @@ def render_card_body(
     if execution is not None:
         if backend is not None:
             raise ValueError("Provide either execution or the legacy backend description")
-        program_html = _execution_path(execution) + program_html
+        program_html = _execution_path(execution, include_work=not paired_route) + program_html
     elif backend is not None:
         backend_name, implementation = backend
         if not backend_name.strip() or not implementation.strip():
@@ -238,18 +249,28 @@ def render_card_body(
             f'<span class="backend-implementation">{physical_text(implementation.strip())}</span></div>'
             + program_html
         )
-    output_html = _tensor(outputs, output_note, output_size)
-    if output_path is not None:
-        output_html += _output_path(output_path)
-    fields = (
-        ("input", "Input · 读哪些张量", input_html),
-        ("program", "伪代码", program_html),
-        ("output", "Output · 写到哪里", output_html),
-        ("grid", "CTA · 发射与线程块分工", grid_html),
-        ("traffic", "显存与跨卡通信", physical_text(traffic.strip())),
-    )
+    if paired_route:
+        fields = [
+            ("program", "伪代码 · 执行过程", program_html),
+            ("grid", "发射与 CTA 分工", grid_html),
+            ("input", "变量与本例取值", input_html),
+        ]
+        if derivation.strip():
+            fields.append(("derivation", "实现条件与推导", physical_text(derivation.strip())))
+    else:
+        output_html = _tensor(outputs, output_note, output_size)
+        if output_path is not None:
+            output_html += _output_path(output_path)
+        fields = [
+            ("input", "Input · 读哪些张量", input_html),
+            ("program", "伪代码", program_html),
+            ("output", "Output · 写到哪里", output_html),
+            ("grid", "CTA · 发射与线程块分工", grid_html),
+            ("traffic", "显存与跨卡通信", physical_text(traffic.strip())),
+        ]
     body = "".join(
         f'<div class="card-{key}"><dt>{label}</dt><dd>{value}</dd></div>'
         for key, label, value in fields
     )
-    return f'<dl class="kernel-card kernel-operands{kind_class}">{body}</dl>'
+    layout_class = " paired-detail" if paired_route else ""
+    return f'<dl class="kernel-card kernel-operands{kind_class}{layout_class}">{body}</dl>'
