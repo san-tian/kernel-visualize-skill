@@ -180,8 +180,33 @@ def check_stage_backends(stage, phase, collapsed):
         check_backend_fields(entries[0], f"{phase}/{side}")
 
 
+TRANSFER_FIELDS = ("producer", "buffer", "consumer", "write", "handoff", "next-read", "link")
+
+
+def check_stage_transfers(stage, phase, collapsed):
+    maps = with_class(stage.iter(), "stage-transfers")
+    if len(maps) != 1 or maps[0] in collapsed:
+        raise ValueError(f"expected one initially visible tensor transfer map at {phase}")
+    paths = with_class(maps[0].iter(), "transfer-path")
+    visible_path = False
+    for index, path in enumerate(paths, start=1):
+        visible_fields = set()
+        for field in TRANSFER_FIELDS:
+            values = with_class(path.iter(), "transfer-" + field)
+            tag = "span" if field in ("producer", "buffer", "consumer") else "dd"
+            payload = values[0].find(tag) if len(values) == 1 else None
+            if payload is None or not "".join(payload.itertext()).strip():
+                raise ValueError(f"missing or ambiguous {field} value on tensor path {index} at {phase}")
+            if values[0] not in collapsed:
+                visible_fields.add(field)
+        if path not in collapsed and {"write", "handoff", "link"} <= visible_fields:
+            visible_path = True
+    if not visible_path:
+        raise ValueError(f"expected an initially visible tensor path with write, handoff and link at {phase}")
+
+
 def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows, has_call_kinds,
-                      execution_format):
+                      execution_format, has_transfer_map=False):
     summary = call.find("summary")
     name = "".join(summary.itertext()).strip() if summary is not None else ""
     where = f"{phase}: {name or '(unnamed call)'}"
@@ -202,6 +227,14 @@ def check_kernel_card(call, phase, has_contracts, uses_template, has_input_rows,
             extent = field.find(".//div[@class='tensor-size']")
             if extent is None or not "".join(extent.itertext()).strip():
                 raise ValueError(f"missing Decode input or output size at {where}")
+    if has_transfer_map:
+        paths = with_class(fields[2], "output-path")
+        if len(paths) != 1:
+            raise ValueError(f"missing or ambiguous output path at {where}")
+        for role in ("output-storage", "output-consumer", "output-handoff"):
+            notes = with_class(paths[0], role)
+            if len(notes) != 1 or not any((label.tail or "").strip() for label in notes[0].findall("span")):
+                raise ValueError(f"missing {role} explanation at {where}")
     if execution_format:
         program_field = fields[1]
         entries = with_class(program_field, execution_format)
@@ -264,11 +297,17 @@ def check_section(section):
                 for child in panel:
                     if child.tag != "summary":
                         collapsed.update(child.iter())
+    if "kernel-transfer-map" in classes:
+        for node in section.iter():
+            if "hidden" in node.attrib:
+                collapsed.update(node.iter())
     if compact:
         opened = [el.get("data-phase") for el in stages if "open" in el.attrib]
         if opened != ["qkv"] or any(el.get("name") != "decode-stage" for el in stages):
             raise ValueError("expected a single open Q/KV panel in the named stage group")
     for phase, stage in zip(STAGES, stages):
+        if "kernel-transfer-map" in classes:
+            check_stage_transfers(stage, phase, collapsed)
         if execution_format:
             check_stage_backends(stage, phase, collapsed)
         if continuous:
@@ -301,7 +340,8 @@ def check_section(section):
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         for call in calls:
             check_kernel_card(call, phase, "kernel-contracts" in classes, uses_template,
-                              "kernel-input-examples" in classes, has_call_kinds, execution_format)
+                              "kernel-input-examples" in classes, has_call_kinds, execution_format,
+                              has_transfer_map="kernel-transfer-map" in classes)
     return ids
 
 
@@ -418,7 +458,10 @@ def preview(html_path, png_path):
                                 locale="zh-CN", offline=True)
         page.goto(html_path.resolve().as_uri())
         page.evaluate("document.fonts.ready")
-        stage = page.locator('#compare-qkv .stage-comparison')
+        if page.locator("#compare-qkv .stage-transfers").count():
+            stage = page.locator("#compare-qkv")
+        else:
+            stage = page.locator("#compare-qkv .stage-comparison")
         if not stage.count():
             stage = page.locator('.overview-stage[data-phase="qkv"]')
         image = stage.screenshot(type="png", animations="disabled")

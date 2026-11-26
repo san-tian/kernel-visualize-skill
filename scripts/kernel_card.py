@@ -6,7 +6,7 @@ Pair the returned fragment with assets/kernel-card.css.
 """
 from html import escape
 import re
-from typing import Optional, Sequence, Tuple, Union
+from typing import Mapping, Optional, Sequence, Tuple, Union
 
 
 KIND_LABELS = {
@@ -60,6 +60,41 @@ InputRows = Sequence[Tuple[str, str, str]]
 ExecutionPath = Tuple[str, str, str, str]
 
 
+OutputPath = Tuple[str, str, str]
+
+
+def render_transfer_path(record: Mapping[str, str]) -> str:
+    """Render one tensor crossing a documented producer/consumer boundary."""
+    endpoints = (("producer", "写入方 / 来源"), ("buffer", "张量与存放位置"), ("consumer", "下一读方"))
+    accounting = (("write", "本步写入"), ("handoff", "交接新增搬运"),
+                  ("next_read", "下游读取"), ("link", "通信"))
+    for field, _ in endpoints + accounting:
+        if not isinstance(record.get(field), str) or not record[field].strip():
+            raise ValueError(f"Transfer path requires a nonempty {field}")
+
+    boxes = [
+        f'<div class="transfer-{field}"><small>{label}</small><span>{physical_text(record[field])}</span></div>'
+        for field, label in endpoints
+    ]
+    arrow = '<i class="transfer-arrow" aria-hidden="true">→</i>'
+    facts = "".join(
+        f'<div class="transfer-{field.replace("_", "-")}"><dt>{label}</dt><dd>{physical_text(record[field])}</dd></div>'
+        for field, label in accounting
+    )
+    return ('<div class="transfer-path"><div class="transfer-route">' + arrow.join(boxes)
+            + '</div><dl class="transfer-facts">' + facts + '</dl></div>')
+
+
+def _output_path(path: OutputPath) -> str:
+    roles = (("storage", "存储方式"), ("consumer", "下一读方"), ("handoff", "交接新增搬运"))
+    if (not isinstance(path, (tuple, list)) or len(path) != len(roles)
+            or any(not isinstance(v, str) or not v.strip() for v in path)):
+        raise ValueError("Output path needs its storage, consumer and handoff cost")
+    rows = "".join(f'<div class="output-{key}"><span>{label}</span> {physical_text(value.strip())}</div>'
+                   for (key, label), value in zip(roles, path))
+    return f'<div class="output-path">{rows}</div>'
+
+
 def _execution_path(execution: ExecutionPath) -> str:
     fields = (("api", "调用接口"), ("owner", "执行方"), ("work", "具体工作"), ("evidence", "设备端实现"))
     if (not isinstance(execution, (tuple, list)) or len(execution) != len(fields)
@@ -109,6 +144,7 @@ def render_card_body(
     kind: Optional[Tuple[str, str]] = None,
     backend: Optional[Tuple[str, str]] = None,
     execution: Optional[ExecutionPath] = None,
+    output_path: Optional[OutputPath] = None,
     input_note: str = "",
     output_note: str = "",
     input_size: str = "",
@@ -128,6 +164,9 @@ def render_card_body(
     independently from the implementation that handles it. State the actual
     device kernel or copy mechanism only when the evidence identifies it.
     Older callers may supply the two-field backend description instead.
+
+    output_path=(storage, consumer, handoff) identifies how the consumer sees
+    this output. Charge any copy at the operation that performs it.
 
     grid describes the unit of work or known dispatch boundary. traffic describes
     memory access, host copies and collectives as applicable. Size lines can state
@@ -172,10 +211,13 @@ def render_card_body(
             f'<span class="backend-implementation">{physical_text(implementation.strip())}</span></div>'
             + program_html
         )
+    output_html = _tensor(outputs, output_note, output_size)
+    if output_path is not None:
+        output_html += _output_path(output_path)
     fields = (
         ("input", "Input · 读哪些张量", input_html),
         ("program", "伪代码", program_html),
-        ("output", "Output · 写到哪里", _tensor(outputs, output_note, output_size)),
+        ("output", "Output · 写到哪里", output_html),
         ("grid", "CTA · 发射与线程块分工", grid_html),
         ("traffic", "显存与跨卡通信", physical_text(traffic.strip())),
     )
