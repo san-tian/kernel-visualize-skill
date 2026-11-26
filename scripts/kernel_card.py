@@ -7,7 +7,7 @@ details. Use assets/kernel-card.css and assets/kernel-memory-route.css together.
 """
 from html import escape
 import re
-from typing import Mapping, Optional, Sequence, Tuple, Union
+from typing import AbstractSet, Mapping, Optional, Sequence, Tuple, Union
 
 
 KIND_LABELS = {
@@ -100,7 +100,7 @@ _SCOPE_HEADINGS = {
 }
 
 
-def _execution_scope(scope: str, kind_id: str, onchip: str, work: str,
+def _execution_scope(scope: str, kind_id: str, onchip: Optional[str], work: str,
                      note: str, details: str) -> str:
     if scope == "opaque":
         title = f"{KIND_LABELS[kind_id]} · 发射次数待确认"
@@ -114,7 +114,8 @@ def _execution_scope(scope: str, kind_id: str, onchip: str, work: str,
     rows = []
     if work.strip():
         rows.append(f'<div class="scope-work"><dt>执行内容</dt><dd>{physical_text(work.strip())}</dd></div>')
-    rows.append(_memory_field("onchip", device_label, onchip))
+    if onchip is not None:
+        rows.append(_memory_field("onchip", device_label, onchip))
     if note.strip():
         rows.append(f'<div class="scope-note"><dt>范围说明</dt><dd>{physical_text(note.strip())}</dd></div>')
     return (f'<div class="{section}" data-launch-scope="{scope}">'
@@ -125,7 +126,8 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
                          link_kind: str, anchor: str = "", children: str = "",
                          evidence: str = _LOGICAL_VOLUME, link_side: Optional[str] = None,
                          input_link: Optional[str] = None, launch_scope: Optional[str] = None,
-                         work: str = "", boundary_note: str = "") -> str:
+                         work: str = "", boundary_note: str = "",
+                         shared_defaults: Optional[AbstractSet[str]] = None) -> str:
     """Render Input, the implementation and its disclosure, then Output for one call.
 
     io holds plain text for (read, write, consumer, handoff, link, onchip). Name,
@@ -144,17 +146,34 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
     Omitting launch_scope preserves the earlier I/O and disclosure layout.
     Within an explicit scope, work describes the computation. boundary_note
     states its conditions or names the launch counted earlier for a continuation.
+
+    When the article explains shared defaults up front, pass a set naming only
+    the onchip, handoff or local link fields covered by that explanation. An
+    empty set keeps all fields. Standalone cards retain all fields by default.
     """
     if not isinstance(name, str) or not name.strip():
         raise ValueError("A call template requires its source call name")
     if not isinstance(io, (tuple, list)) or len(io) != 6:
         raise ValueError("A call template needs read, write, consumer, handoff, link and onchip")
+    omitted = shared_defaults or frozenset()
+    kind_attr = ""
+    if shared_defaults is not None:
+        if not launch_scope or not work.strip():
+            raise ValueError("Shared defaults require an explicit scope and its execution summary")
+        if not omitted <= {"onchip", "handoff", "link"}:
+            raise ValueError("Only onchip, handoff and the local link may use shared defaults")
+        if not link_kind or link_kind not in _LINK_LABELS:
+            raise ValueError("Shared defaults require a known link classification")
+        if "link" in omitted and (link_kind != "local" or input_link is not None):
+            raise ValueError("Host, peer, conditional and unknown links must stay on their call")
+        kind_attr = f' data-link-kind="{link_kind}"'
     read, write, consumer, handoff, link, onchip = io
     input_rows = _memory_field("read", "读取", read)
     if launch_scope is None:
         input_rows += _memory_field("onchip", "片上暂存", onchip)
-    output_rows = (_memory_field("write", "写入", write) + _memory_field("consumer", "下一读方", consumer)
-                   + _memory_field("handoff", "交接搬运", handoff))
+    output_rows = _memory_field("write", "写入", write) + _memory_field("consumer", "下一读方", consumer)
+    if "handoff" not in omitted:
+        output_rows += _memory_field("handoff", "交接搬运", handoff)
     if link_side not in (None, "input", "output"):
         raise ValueError("link_side must be input or output")
     if input_link is not None:
@@ -162,9 +181,9 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
             raise ValueError("input_link describes the receive and io[4] must describe the send")
         input_rows += _memory_link(link_kind, input_link)
         output_rows += _memory_link(link_kind, link)
-    elif link_side == "input" or (link_side is None and link_kind == "host"):
+    elif "link" not in omitted and (link_side == "input" or (link_side is None and link_kind == "host")):
         input_rows += _memory_link(link_kind, link)
-    else:
+    elif "link" not in omitted:
         output_rows += _memory_link(link_kind, link)
     title = f'<code>{escape(name.strip())}</code>'
     kind = kind_badge(kind_id)
@@ -177,10 +196,11 @@ def render_call_template(name: str, kind_id: str, io: MemoryIO, body: str, *,
         scope_html = ""
         outer_details = details
     else:
-        scope_html = _execution_scope(launch_scope, kind_id, onchip, work, boundary_note, details)
+        scope_html = _execution_scope(launch_scope, kind_id, None if "onchip" in omitted else onchip,
+                                      work, boundary_note, details)
         outer_details = ""
     return (f'<div class="kernel-step"><div class="kernel-step-heading">{title}{kind}</div>'
-            '<div class="kernel-io"><div class="card-input-route">'
+            f'<div class="kernel-io"{kind_attr}><div class="card-input-route">'
             f'<b class="io-heading">Input · 从哪读</b><dl>{input_rows}</dl></div>{scope_html}'
             '<div class="card-output-route">'
             f'<b class="io-heading">Output · 写给谁</b><dl>{output_rows}</dl></div>'

@@ -20,7 +20,7 @@ TAGS = set("""
 """.split())
 ATTRS = set("""
     aria-hidden aria-label aria-labelledby aria-live aria-pressed class colspan
-    data-change data-memory-routes data-call-io data-call-details data-launch-boundaries data-launch-scope data-gpu-card data-kernel-role data-label data-pair-side
+    data-change data-memory-routes data-call-io data-call-details data-launch-boundaries data-launch-scope data-io-defaults data-link-kind data-gpu-card data-kernel-role data-label data-pair-side
     data-page data-phase data-row data-slot-cell data-slot-controls data-slot-frame
     data-slot-message data-slot-route data-slot-saved-bytes data-slot-writes
     data-step hidden id name open role scope start type value
@@ -348,7 +348,7 @@ SCOPE_LABELS = {"single": "一次 GPU kernel 发射", "continuation": "续段", 
                 "conditional": "运行条件", "opaque": "待确认", "view": "视图", "host": "主机"}
 
 
-def check_execution_scope(scope, call, badge, where):
+def check_execution_scope(scope, call, badge, where, *, shared_defaults=False):
     """Only a single evidenced launch or a continuation earns a kernel boundary."""
     mode = scope.get("data-launch-scope")
     hardware = mode in {"single", "continuation"}
@@ -367,16 +367,17 @@ def check_execution_scope(scope, call, badge, where):
     ledger = ledgers[0]
     fields = ["scope-work", "memory-onchip", "scope-note"]
     actual = [set(row.get("class", "").split()) & set(fields) for row in ledger]
-    expected = [{role} for role in fields if role == "memory-onchip" or {role} in actual]
+    required = "scope-work" if shared_defaults else "memory-onchip"
+    expected = [{role} for role in fields if role == required or {role} in actual]
     if (actual != expected or any([el.tag for el in row] != ["dt", "dd"]
                                   or not all("".join(el.itertext()).strip() for el in row) for row in ledger)):
-        raise ValueError(f"expected one on-chip field and distinct execution facts at {where}")
+        raise ValueError(f"expected one {required} field and distinct execution facts at {where}")
     if mode == "continuation" and not with_class(ledger, "scope-note"):
         raise ValueError(f"explain which launch this continuation belongs to at {where}")
     return ledger
 
 
-def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False):
+def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False, shared_defaults=False):
     """Each call owns a visible Input and Output, even when nested inside a composite."""
     def only(nodes, role):
         matches = with_class(nodes, role)
@@ -442,7 +443,7 @@ def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False):
             if scope not in unclaimed_scopes:
                 raise ValueError(f"details must be inside their own execution scope at {where}")
             unclaimed_scopes.remove(scope)
-            ledger = check_execution_scope(scope, call, badge, where)
+            ledger = check_execution_scope(scope, call, badge, where, shared_defaults=shared_defaults)
             for row in ledger:
                 if len(fact_classes.intersection(row.get("class", "").split())) != 1:
                     raise ValueError(f"ambiguous execution field at {where}")
@@ -453,8 +454,11 @@ def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False):
             raise ValueError(f"expected Input, Output and one byte accounting basis at {where}")
         unclaimed_facts.remove(evidence)
         links = []
+        output_fields = ("write", "consumer")
+        if not shared_defaults or with_class(output_box.iter(), "memory-handoff"):
+            output_fields += ("handoff",)
         for box, label, fields in ((input_box, "Input", input_fields),
-                                   (output_box, "Output", ("write", "consumer", "handoff"))):
+                                   (output_box, "Output", output_fields)):
             title = only(box, "io-heading")
             lists = box.findall("dl")
             if not content(title).startswith(label) or len(lists) != 1 or list(box) != [title, lists[0]]:
@@ -471,7 +475,12 @@ def check_integrated_calls(stage, phase, calls, collapsed, *, explicit=False):
                 if [el.tag for el in row] != ["dt", "dd"] or not all(content(el) for el in row):
                     raise ValueError(f"empty input/output fact at {where}")
             links.extend(here)
-        if not links:
+        if shared_defaults:
+            declared = "memory-link-" + io.get("data-link-kind", "")
+            if (declared not in LINK_KINDS or (not links and declared != "memory-link-local")
+                    or any(declared not in link.get("class", "").split() for link in links)):
+                raise ValueError(f"communication fields must cover the declared transfer type at {where}")
+        elif not links:
             raise ValueError(f"missing call communication classification at {where}")
         if len(links) == 2 and content(links[0].find("dd")) == content(links[1].find("dd")):
             raise ValueError(f"repeat of the same transfer in both Input and Output at {where}")
@@ -591,6 +600,25 @@ def check_section(section):
     if explicit and (len(markers) != 1 or markers[0].get("data-launch-boundaries") != "explicit"
                      or markers[0].get("data-call-io") != "integrated"):
         raise ValueError("declare explicit execution scopes on the integrated I/O format marker")
+    default_roots = [el for el in section.iter() if "data-io-defaults" in el.attrib]
+    guides = with_class(section.iter(), "io-defaults")
+    shared_defaults = bool(default_roots)
+    if shared_defaults or guides:
+        if (len(default_roots) != 1 or default_roots != markers
+                or default_roots[0].get("data-io-defaults") != "shared" or len(guides) != 1):
+            raise ValueError("declare one shared I/O guide on the explicit call format")
+        root, guide = default_roots[0], guides[0]
+        before_stages = list(root.iter())
+        if (guide not in before_stages or stages[0] not in before_stages
+                or before_stages.index(guide) >= before_stages.index(stages[0])
+                or not "".join(guide.itertext()).strip()):
+            raise ValueError("the shared I/O guide must introduce the stages")
+        parents = {child: parent for parent in root.iter() for child in parent}
+        node = guide
+        while node is not root:
+            if node.tag == "details" or "hidden" in node.attrib or node.get("aria-hidden") == "true":
+                raise ValueError("the shared I/O guide must be visible with all details closed")
+            node = parents[node]
     if has_scope_markup != explicit:
         raise ValueError("explicit execution scopes require a launch-boundaries marker")
     if "card-input-route" in classes and not integrated:
@@ -650,7 +678,7 @@ def check_section(section):
         if not calls:
             raise ValueError(f"missing expandable kernel inventory at {phase}")
         if integrated:
-            check_integrated_calls(stage, phase, calls, collapsed, explicit=explicit)
+            check_integrated_calls(stage, phase, calls, collapsed, explicit=explicit, shared_defaults=shared_defaults)
         elif per_call_routes:
             check_call_routes(stage, phase, calls, collapsed, implementation_details=implementation_details)
         if ordered:
